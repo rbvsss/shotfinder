@@ -40,7 +40,8 @@ final class CameraController: NSObject, ObservableObject {
     private let imageContext = CIContext()
     private var device: AVCaptureDevice?
     private var wideFactor: Double = 1
-    private var pendingFrame: CheckedContinuation<Data, Error>?
+    private var pendingFrame: CheckedContinuation<ScanFrame, Error>?
+    private var onPendingFrame: (() -> Void)?
     private var frameRequest = 0
     private var processedData: Data?
     private var rawData: Data?
@@ -264,13 +265,15 @@ final class CameraController: NSObject, ObservableObject {
     }
 
     /// Returns the next video frame as a portrait JPEG small enough to send for scanning.
-    func captureScanFrame() async throws -> Data {
+    /// `onFrame` runs at the moment the frame arrives, before the slower encoding work.
+    func captureScanFrame(onFrame: @escaping () -> Void) async throws -> ScanFrame {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 videoQueue.async {
                     self.failPendingFrame(with: CancellationError())
                     self.frameRequest += 1
                     self.pendingFrame = continuation
+                    self.onPendingFrame = onFrame
                     let request = self.frameRequest
                     self.videoQueue.asyncAfter(deadline: .now() + Self.frameTimeout) {
                         if request == self.frameRequest {
@@ -354,6 +357,8 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let continuation = pendingFrame else { return }
         pendingFrame = nil
+        onPendingFrame?()
+        onPendingFrame = nil
         guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer),
               let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
             continuation.resume(throwing: ScanError.badResponse)
@@ -362,10 +367,15 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         let image = CIImage(cvPixelBuffer: pixels)
         let scale = min(1, Self.scanLongEdge / max(image.extent.width, image.extent.height))
-        let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let width = (image.extent.width * scale).rounded()
+        let height = (image.extent.height * scale).rounded()
+        let scaled = image.transformed(by: CGAffineTransform(
+            scaleX: width / image.extent.width,
+            y: height / image.extent.height
+        ))
         let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.8]
         if let jpeg = imageContext.jpegRepresentation(of: scaled, colorSpace: colorSpace, options: options) {
-            continuation.resume(returning: jpeg)
+            continuation.resume(returning: ScanFrame(jpeg: jpeg, width: Int(width), height: Int(height)))
         } else {
             continuation.resume(throwing: ScanError.badResponse)
         }

@@ -37,6 +37,7 @@ struct ContentView: View {
     @State private var focusPoint: CGPoint?
     @State private var shutterBlink = false
     @State private var zoomIsManual = false
+    @State private var choosingRatio = false
 
     init(camera: @autoclosure @escaping () -> CameraController = CameraController()) {
         _camera = StateObject(wrappedValue: camera())
@@ -210,15 +211,28 @@ struct ContentView: View {
             }
 
             if let target = currentTarget {
-                Text(target.label.uppercased())
-                    .font(Theme.label())
-                    .foregroundStyle(Theme.paper)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Theme.ink.opacity(0.72))
-                    .padding(.top, 14)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
+                HStack(spacing: 8) {
+                    Text(target.label.uppercased())
+                        .foregroundStyle(Theme.paper)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    if isAligned {
+                        Text("READY")
+                            .foregroundStyle(Theme.signal)
+                    } else if let directionToShot {
+                        Image(systemName: "arrow.up")
+                            .foregroundStyle(Theme.signal)
+                            .rotationEffect(.radians(directionToShot))
+                    }
+                }
+                .font(Theme.label())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Theme.ink.opacity(0.72))
+                .padding(.top, 14)
+                .padding(.horizontal, 16)
+                .transition(.opacity)
+                .allowsHitTesting(false)
             }
 
             if shutterBlink {
@@ -285,25 +299,53 @@ struct ContentView: View {
         lensChips.last { $0.value <= camera.zoomDisplay + Self.lensMatchTolerance } ?? lensChips.first
     }
 
+    @ViewBuilder
     private var toolRow: some View {
-        HStack(spacing: 0) {
-            if camera.hasFlash {
-                toolButton(flashTitle, active: camera.flashMode != .off, alignment: .leading, action: camera.cycleFlash)
-                    .accessibilityLabel(flashTitle)
+        if choosingRatio {
+            ratioPicker
+                .transition(.opacity)
+        } else {
+            HStack(spacing: 0) {
+                if camera.hasFlash {
+                    toolButton(flashTitle, active: camera.flashMode != .off, alignment: .leading, action: camera.cycleFlash)
+                        .accessibilityLabel(flashTitle)
+                }
+                toolButton(ratio.rawValue, active: true, alignment: camera.hasFlash ? .center : .leading) {
+                    withAnimation(Theme.quick) { choosingRatio = true }
+                }
+                .disabled(!isIdle)
+                .opacity(isIdle ? 1 : 0.35)
+                .accessibilityLabel("Ratio \(ratio.rawValue)")
+                if camera.supportsRAW {
+                    toolButton("RAW", active: rawEnabled) { rawEnabled.toggle() }
+                        .accessibilityValue(rawEnabled ? "On" : "Off")
+                }
+                toolButton("API KEY", active: false, alignment: .trailing) { showingSettings = true }
+                    .accessibilityLabel("Claude API key")
             }
-            toolButton(ratio.rawValue, active: true, alignment: camera.hasFlash ? .center : .leading) {
-                withAnimation(Theme.quick) { ratio = ratio.next }
-            }
-            .disabled(!isIdle)
-            .opacity(isIdle ? 1 : 0.35)
-            .accessibilityLabel("Ratio \(ratio.rawValue)")
-            if camera.supportsRAW {
-                toolButton("RAW", active: rawEnabled) { rawEnabled.toggle() }
-                    .accessibilityValue(rawEnabled ? "On" : "Off")
-            }
-            toolButton("API KEY", active: false, alignment: .trailing) { showingSettings = true }
-                .accessibilityLabel("Claude API key")
+            .transition(.opacity)
         }
+    }
+
+    private var ratioPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(CaptureRatio.allCases, id: \.self) { option in
+                toolButton(option.rawValue, active: option == ratio, alignment: ratioAlignment(option)) {
+                    withAnimation(Theme.quick) {
+                        ratio = option
+                        choosingRatio = false
+                    }
+                }
+                .accessibilityLabel("Ratio \(option.rawValue)")
+                .accessibilityAddTraits(option == ratio ? .isSelected : [])
+            }
+        }
+    }
+
+    private func ratioAlignment(_ option: CaptureRatio) -> Alignment {
+        if option == CaptureRatio.allCases.first { return .leading }
+        if option == CaptureRatio.allCases.last { return .trailing }
+        return .center
     }
 
     private func toolButton(
@@ -406,6 +448,12 @@ struct ContentView: View {
         )
     }
 
+    /// The way to turn towards the shot, in radians clockwise from straight up.
+    private var directionToShot: Double? {
+        guard let projection = currentProjection, !projection.isCentered else { return nil }
+        return atan2(projection.x - 0.5, 0.5 - projection.y)
+    }
+
     /// Zooms in for the user once, as soon as the shot would stay in view at its full zoom.
     private var shouldAutoZoom: Bool {
         guard !zoomIsManual, let target = currentTarget, let projection = currentProjection else { return false }
@@ -505,10 +553,12 @@ struct ContentView: View {
         scanTask = Task {
             do {
                 try await Task.sleep(nanoseconds: Self.lensSettleDelay)
-                let jpeg = try await camera.captureScanFrame()
-                motion.mark()
+                let tracker = motion
+                let frame = try await camera.captureScanFrame {
+                    DispatchQueue.main.async { tracker.mark() }
+                }
                 let zoomFactor = camera.zoomFactor
-                let result = try await ClaudeScanner.scan(jpeg: jpeg, ratio: scanRatio, apiKey: apiKey)
+                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, apiKey: apiKey)
                 try Task.checkCancellation()
                 guard let optics = camera.optics else { throw ScanError.badResponse }
                 let target = ScanTarget(

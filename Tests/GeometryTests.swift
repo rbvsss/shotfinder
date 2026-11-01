@@ -6,13 +6,9 @@ final class GeometryTests: XCTestCase {
     private let optics = CameraOptics(tanHorizontal: 0.75, tanVertical: 1)
     private let identity = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
 
-    private func result(x: Double, y: Double, size: Double) -> ScanResult {
-        let json = #"{"label":"a","tip":"b","center_x":\#(x),"center_y":\#(y),"size":\#(size)}"#
-        return try! JSONDecoder().decode(ScanResult.self, from: Data(json.utf8))
-    }
-
     private func target(x: Double = 0.7, y: Double = 0.3, size: Double = 0.25, ratio: CaptureRatio = .threeFour) -> ScanTarget {
-        ScanTarget(result: result(x: x, y: y, size: size), optics: optics, scanZoomFactor: 1, scanLens: 0.5, ratio: ratio)
+        let result = ScanResult(label: "a", tip: "b", centerX: x, centerY: y, size: size)
+        return ScanTarget(result: result, optics: optics, scanZoomFactor: 1, scanLens: 0.5, ratio: ratio)
     }
 
     func testShotAppearsWhereItWasScanned() throws {
@@ -67,6 +63,5 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(CaptureRatio.square.cropInViewfinder.height, 0.75, accuracy: 0.0001)
         XCTAssertEqual(CaptureRatio.fourFive.cropInViewfinder.height, 0.9375, accuracy: 0.0001)
         XCTAssertEqual(CaptureRatio.nineSixteen.cropInViewfinder.width, 0.75, accuracy: 0.0001)
-        XCTAssertEqual(CaptureRatio.nineSixteen.next, .threeFour)
     }
 }

@@ -52,7 +52,8 @@ final class ClaudeScannerTests: XCTestCase {
     }
 
     private func scan() async throws -> ScanResult {
-        try await ClaudeScanner.scan(jpeg: Data([1, 2, 3]), ratio: .fourFive, apiKey: "test-key")
+        let frame = ScanFrame(jpeg: Data([1, 2, 3]), width: 900, height: 1200)
+        return try await ClaudeScanner.scan(frame: frame, ratio: .square, apiKey: "test-key")
     }
 
     private func assertFails(status: Int, json: String, matching check: (ScanError) -> Bool) async {
@@ -68,22 +69,42 @@ final class ClaudeScannerTests: XCTestCase {
         }
     }
 
-    func testReadsTheShotPastOtherBlocks() async throws {
-        let shot = #"{\"label\":\"old barn\",\"tip\":\"step left\",\"center_x\":0.4,\"center_y\":0.6,\"size\":0.5}"#
-        StubProtocol.body = Data(#"""
+    private func answer(x1: Double, y1: Double, x2: Double, y2: Double) -> Data {
+        let shot = #"{\"label\":\"old barn\",\"tip\":\"Step left\",\"x1\":\#(x1),\"y1\":\#(y1),\"x2\":\#(x2),\"y2\":\#(y2)}"#
+        return Data(#"""
         {"content":[{"type":"thinking","thinking":""},{"type":"text","text":"\#(shot)"}],"stop_reason":"end_turn"}
         """#.utf8)
+    }
+
+    func testConvertsPixelsToFractionsPastOtherBlocks() async throws {
+        StubProtocol.body = answer(x1: 180, y1: 480, x2: 540, y2: 840)
 
         let result = try await scan()
 
         XCTAssertEqual(result.label, "old barn")
-        XCTAssertEqual(result.centerX, 0.4)
-        XCTAssertEqual(result.size, 0.5)
+        XCTAssertEqual(result.centerX, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.55, accuracy: 0.0001)
+        XCTAssertEqual(result.size, 0.4, accuracy: 0.0001)
+    }
+
+    func testShotGrowsToHoldABoxOfTheWrongShape() async throws {
+        StubProtocol.body = answer(x1: 300, y1: 200, x2: 500, y2: 800)
+
+        let result = try await scan()
+
+        // 600 of 1200 pixels tall needs two thirds of the square crop's 0.75 height.
+        XCTAssertEqual(result.size, 2.0 / 3.0, accuracy: 0.0001)
+    }
+
+    func testEmptyBoxIsRejected() async {
+        await assertFails(status: 200, json: String(decoding: answer(x1: 500, y1: 500, x2: 400, y2: 400), as: UTF8.self)) {
+            if case .badResponse = $0 { return true }
+            return false
+        }
     }
 
     func testSendsTheDocumentedRequest() async throws {
-        let shot = #"{\"label\":\"a\",\"tip\":\"b\",\"center_x\":0.5,\"center_y\":0.5,\"size\":0.5}"#
-        StubProtocol.body = Data(#"{"content":[{"type":"text","text":"\#(shot)"}],"stop_reason":"end_turn"}"#.utf8)
+        StubProtocol.body = answer(x1: 100, y1: 100, x2: 500, y2: 500)
 
         _ = try await scan()
 
@@ -96,6 +117,7 @@ final class ClaudeScannerTests: XCTestCase {
         XCTAssertEqual(body["fallbacks"] as? String, "default")
         XCTAssertNil(body["thinking"])
         XCTAssertNil(body["temperature"])
+        XCTAssertTrue(String(decoding: try XCTUnwrap(StubProtocol.lastBody), as: UTF8.self).contains("900x1200 pixels"))
     }
 
     func testBadKey() async {

@@ -1,18 +1,20 @@
 import Foundation
 
+/// A video frame prepared for scanning. Its size is sent with it so Claude's pixels map back exactly.
+struct ScanFrame {
+    let jpeg: Data
+    let width: Int
+    let height: Int
+}
+
 /// The shot Claude picked. Coordinates are fractions of the image, measured from the top left.
-struct ScanResult: Decodable {
+struct ScanResult {
     let label: String
     let tip: String
     let centerX: Double
     let centerY: Double
+    /// The shot's width as a fraction of the image width.
     let size: Double
-
-    enum CodingKeys: String, CodingKey {
-        case label, tip, size
-        case centerX = "center_x"
-        case centerY = "center_y"
-    }
 }
 
 enum ScanError: LocalizedError {
@@ -49,16 +51,18 @@ enum ClaudeScanner {
     private static let systemPrompt = """
     You are an experienced photographer looking through a camera with a friend. The image is \
     the wide view from their phone. Find the single most rewarding photo available inside this \
-    view and mark where it is.
+    view and mark where it is. Keep the whole subject inside the shot unless a tight detail is \
+    clearly the better picture, and don't cut through it by accident. Even a plain scene has a \
+    best picture, so always commit to one.
 
     Return:
-    - label: what the shot is, in 2 to 4 words, such as "distant church spires".
-    - tip: one short instruction for getting the shot, under 8 words, in sentence case with no \
-    full stop.
-    - center_x, center_y: the centre of the shot as fractions of the image from 0 to 1, where \
-    0,0 is the top left corner.
-    - size: the width of the shot as a fraction of the image width. Place the shot so that the \
-    subject sits well in the frame, and keep the whole shot inside the image.
+    - label: name what is actually there, in 2 to 4 words, such as "distant church spires". \
+    Never a generic word like "subject".
+    - tip: one short instruction specific to this scene, under 8 words, in sentence case with no \
+    full stop, such as "Keep the horizon low". Never something generic like "Take the shot".
+    - x1, y1, x2, y2: the top left and bottom right corners of the shot, in pixel coordinates of \
+    the image, where 0,0 is the top left corner. Place the shot so that the subject sits well in \
+    the frame, and keep the whole shot inside the image.
     """
 
     private static let schema: [String: Any] = [
@@ -66,19 +70,22 @@ enum ClaudeScanner {
         "properties": [
             "label": ["type": "string"],
             "tip": ["type": "string"],
-            "center_x": ["type": "number"],
-            "center_y": ["type": "number"],
-            "size": ["type": "number"]
+            "x1": ["type": "number"],
+            "y1": ["type": "number"],
+            "x2": ["type": "number"],
+            "y2": ["type": "number"]
         ],
-        "required": ["label", "tip", "center_x", "center_y", "size"],
+        "required": ["label", "tip", "x1", "y1", "x2", "y2"],
         "additionalProperties": false
     ]
 
-    static func scan(jpeg: Data, ratio: CaptureRatio, apiKey: String) async throws -> ScanResult {
-        let maximumSize = String(format: "%.2f", ratio.cropInViewfinder.width)
+    static func scan(frame: ScanFrame, ratio: CaptureRatio, apiKey: String) async throws -> ScanResult {
+        let crop = ratio.cropInViewfinder
+        let widest = Int(Double(frame.width) * Double(crop.width))
         let request = """
-        Find the shot. It will be cropped to a \(ratio.rawValue) shape (width to height, portrait), \
-        so size can be anywhere from 0.15 to \(maximumSize).
+        Find the shot. This image is \(frame.width)x\(frame.height) pixels. The shot will be cropped \
+        to a \(ratio.rawValue) shape (width to height, portrait), and can be from \(frame.width / 10) \
+        to \(widest) pixels wide.
         """
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
@@ -97,7 +104,7 @@ enum ClaudeScanner {
                         "source": [
                             "type": "base64",
                             "media_type": "image/jpeg",
-                            "data": jpeg.base64EncodedString()
+                            "data": frame.jpeg.base64EncodedString()
                         ]
                     ],
                     ["type": "text", "text": request]
@@ -139,11 +146,43 @@ enum ClaudeScanner {
         if message.stopReason == "refusal" { throw ScanError.refused }
         guard message.stopReason != "max_tokens",
               let text = message.content.first(where: { $0.type == "text" })?.text,
-              let result = try? JSONDecoder().decode(ScanResult.self, from: Data(text.utf8)),
-              result.centerX.isFinite, result.centerY.isFinite, result.size.isFinite else {
+              let box = try? JSONDecoder().decode(ShotBox.self, from: Data(text.utf8)),
+              let result = box.result(in: frame, crop: crop) else {
             throw ScanError.badResponse
         }
         return result
+    }
+
+    private struct ShotBox: Decodable {
+        let label: String
+        let tip: String
+        let x1: Double
+        let y1: Double
+        let x2: Double
+        let y2: Double
+
+        /// Converts Claude's pixels to fractions, sizing the shot so the crop holds the whole box.
+        func result(in frame: ScanFrame, crop: CGSize) -> ScanResult? {
+            let width = Double(frame.width)
+            let height = Double(frame.height)
+            let left = min(max(x1, 0), width)
+            let right = min(max(x2, 0), width)
+            let top = min(max(y1, 0), height)
+            let bottom = min(max(y2, 0), height)
+            guard right > left, bottom > top else { return nil }
+
+            let scale = max(
+                (right - left) / width / Double(crop.width),
+                (bottom - top) / height / Double(crop.height)
+            )
+            return ScanResult(
+                label: label,
+                tip: tip,
+                centerX: (left + right) / 2 / width,
+                centerY: (top + bottom) / 2 / height,
+                size: scale * Double(crop.width)
+            )
+        }
     }
 
     private static func failure(status: Int, data: Data) -> ScanError {

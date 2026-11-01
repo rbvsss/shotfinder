@@ -17,7 +17,7 @@ struct ScanTarget {
     init(result: ScanResult, optics: CameraOptics, scanZoomFactor: Double, scanLens: Double, ratio: CaptureRatio) {
         let centerX = min(max(result.centerX, 0), 1)
         let centerY = min(max(result.centerY, 0), 1)
-        let scale = min(max(result.size / Double(ratio.cropInViewfinder.width), 0.15), 1)
+        let scale = min(max(result.size / Double(ratio.cropInViewfinder.width), 0.1), 1)
         label = result.label
         tip = result.tip
         self.scale = scale
