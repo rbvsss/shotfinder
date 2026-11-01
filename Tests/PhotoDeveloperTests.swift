@@ -130,6 +130,43 @@ final class PhotoDeveloperTests: XCTestCase {
         XCTAssertEqual(framed.size.height, plain.size.height + plain.size.width * 0.24, accuracy: 2)
     }
 
+    /// The colour of the pixel just inside an image's top left corner.
+    private func cornerColor(_ image: UIImage) throws -> [Int] {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(cgImage, in: CGRect(x: -2, y: 1 - CGFloat(cgImage.height) + 2, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)))
+        return pixel.map(Int.init)
+    }
+
+    func testPaperStaysLightWhateverIsApplied() throws {
+        let ready = try developer()
+        let look = try XCTUnwrap(Look.allCases.first { $0 != .natural })
+        let changes: [(String, (inout DevelopSettings) -> Void)] = [
+            ("frame only", { _ in }),
+            ("look", { $0.look = look }),
+            ("glow", { $0[.glow] = 25 }),
+            ("grain", { $0[.grain] = 25 }),
+            ("date", { $0.showsDate = true }),
+            ("fade", { $0[.fade] = 100 }),
+            ("vignette", { $0[.vignette] = 100 }),
+            ("look and grain", { $0.look = look; $0[.grain] = 25 }),
+            ("look and glow", { $0.look = look; $0[.glow] = 25 })
+        ]
+        for (name, change) in changes {
+            var settings = DevelopSettings()
+            settings.frame = .paper
+            change(&settings)
+            let corner = try cornerColor(XCTUnwrap(ready.renderPreview(settings)))
+            XCTAssertGreaterThan(corner[0], 220, "\(name): \(corner)")
+            XCTAssertEqual(corner[3], 255, "\(name): \(corner)")
+        }
+    }
+
     func testEveryFrameAndDateStampRender() throws {
         let ready = try developer()
         for frame in PhotoFrame.allCases {
