@@ -58,6 +58,8 @@ struct DevelopView: View {
                 .padding(.bottom, 8)
         }
         .background(Color.black.ignoresSafeArea())
+        // The photo comes first, so the controls stop growing before they would crowd it out.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .sensoryFeedback(.selection, trigger: settings) { _, _ in
             developer != nil
         }

@@ -40,6 +40,8 @@ final class FlowTests: XCTestCase {
     /// the build, because the audit can't judge text drawn over a live camera picture.
     func testAccessibilityAudit() throws {
         try launch()
+        app.activate()
+        sleep(3)
         var findings: [String] = []
         func audit(_ screen: String) throws {
             try app.performAccessibilityAudit { issue in
@@ -72,16 +74,6 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 5))
         sleep(3)
         shoot("large-text-develop")
-    }
-
-    func testLaunchTime() throws {
-        let photo = try XCTUnwrap(Bundle(for: Self.self).path(forResource: "sample", ofType: "jpg"))
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            let app = XCUIApplication()
-            app.launchEnvironment = ["STAGED_PHOTO": photo]
-            app.launch()
-            app.terminate()
-        }
     }
 
     func testIdleAndOptions() throws {
