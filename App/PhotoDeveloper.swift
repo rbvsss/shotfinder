@@ -288,6 +288,7 @@ final class PhotoDeveloper {
             "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
             "inputBiasVector": CIVector(x: 0.5, y: 0.5, z: 0.5, w: 1)
         ])
+        .cropped(to: image.extent)
 
         // Follows the photo's brightness: none at black, most in the midtones, some in highlights.
         let luma = CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0)
@@ -304,6 +305,7 @@ final class PhotoDeveloper {
         return grain
             .applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: neutral, kCIInputMaskImageKey: mask])
             .applyingFilter("CILinearLightBlendMode", parameters: [kCIInputBackgroundImageKey: image])
+            .cropped(to: image.extent)
     }
 
     /// Centre-crops to the ratio, turning it sideways if the phone was held sideways.
