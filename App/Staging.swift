@@ -46,7 +46,8 @@ final class FakeClaude: URLProtocol {
         default: reply = (200, Self.answer(x1: 225, y1: 300, x2: 675, y2: 900))
         }
 
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [self] in
+        // "slow" holds the scan long enough for a test to catch it running.
+        DispatchQueue.global().asyncAfter(deadline: .now() + (Staging.scanReply == "slow" ? 3 : 0.4)) { [self] in
             let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: nil, headerFields: nil)!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(reply.body.utf8))

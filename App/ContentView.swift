@@ -19,17 +19,23 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("camera.ratio") private var ratio = CaptureRatio.threeFour
     @AppStorage("camera.hasScanned") private var hasScanned = false
+    @AppStorage("camera.timer") private var timer = 0
     @State private var isScanning = false
     @State private var scanIsSlow = false
     @State private var scanTask: Task<Void, Never>?
     @State private var message: String?
     @State private var showingSettings = false
+    @State private var showingRatioMenu = false
+    @State private var showingCameraMenu = false
+    @State private var countdown: Int?
+    @State private var countdownTask: Task<Void, Never>?
     @State private var lastPhoto: UIImage?
     @State private var saves = 0
     @GestureState private var pinchStartZoom: Double?
     @State private var focusPoint: CGPoint?
     @State private var shutterBlink = false
     @GestureState private var shutterHeld = false
+    @State private var shutterFired = false
     @State private var iconAngle = 0.0
     @State private var idleStop: Task<Void, Never>?
     /// The zoom to go back to after a scan, since scanning switches to the widest lens.
@@ -66,7 +72,6 @@ struct ContentView: View {
             }
         }
         .animation(Theme.quick, value: camera.capturedPhoto?.id)
-        .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showingSettings) {
             SettingsView()
@@ -115,6 +120,12 @@ struct ContentView: View {
                 camera.zoom(to: lens, rate: 2.5)
             }
         }
+        .onChange(of: ratio) { _, _ in
+            // The shot was framed for the old ratio.
+            if !isIdle {
+                stopGuiding()
+            }
+        }
         .onChange(of: camera.capturedPhoto?.id) { _, id in
             keepCameraRunning(whileDeveloping: id != nil)
         }
@@ -134,6 +145,7 @@ struct ContentView: View {
             capturing
         }
         .sensoryFeedback(.success, trigger: saves)
+        .sensoryFeedback(.selection, trigger: countdown)
         .onCameraCaptureEvent(isEnabled: camera.status == .ready && camera.capturedPhoto == nil && !showingSettings) { event in
             if event.phase == .ended {
                 takePhoto()
@@ -163,6 +175,8 @@ struct ContentView: View {
 
     private var cameraScreen: some View {
         VStack(spacing: 0) {
+            topRow
+
             viewfinder
 
             HintView(
@@ -179,13 +193,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
 
             // Everything you touch sits here, within reach of your thumb.
-            ZStack {
-                LensRow(camera: camera, motion: motion, iconAngle: iconAngle, isShown: isIdle)
-                HStack {
-                    Spacer()
-                    optionsMenu
-                }
-            }
+            LensRow(camera: camera, motion: motion, iconAngle: iconAngle, isShown: isIdle)
             // Guiding leaves only the photo, the shot's name and the two buttons you need.
             .opacity(isIdle ? 1 : 0)
             .allowsHitTesting(isIdle)
@@ -208,14 +216,19 @@ struct ContentView: View {
 
             RatioMask(crop: ratio.cropInViewfinder)
 
-            if motion.target != nil {
-                LiveGuide(motion: motion, isPaused: camera.capturedPhoto != nil || motion.guide.isAligned)
+            if !isIdle {
+                LiveGuide(motion: motion, isPaused: camera.capturedPhoto != nil)
                     .transition(.opacity)
             }
 
-            if isScanning {
-                ScanBrackets(crop: ratio.cropInViewfinder)
-                    .transition(.opacity)
+            if let countdown {
+                Text("\(countdown)")
+                    .font(.system(size: 96, weight: .thin))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .shadow(color: Theme.keyline, radius: 2)
+                    .rotationEffect(.degrees(iconAngle))
+                    .allowsHitTesting(false)
             }
 
             if shutterBlink {
@@ -225,21 +238,87 @@ struct ContentView: View {
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
         .clipped()
-        .overlay(alignment: .topLeading) { flashIndicator }
     }
 
-    @ViewBuilder
-    private var flashIndicator: some View {
-        if camera.flashMode != .off {
-            Image(systemName: camera.flashMode == .on ? "bolt.fill" : "bolt.badge.automatic.fill")
-                .font(.body.weight(.medium))
+    /// The ratio on the left; flash, camera options and settings on the right.
+    private var topRow: some View {
+        HStack(spacing: 0) {
+            Button {
+                showingRatioMenu = true
+            } label: {
+                HStack(spacing: 9) {
+                    RatioIcon(ratio: ratio)
+                        .rotationEffect(.degrees(iconAngle))
+                    Text(ratio.rawValue)
+                        .font(.system(size: 14, weight: .semibold))
+                        .monospacedDigit()
+                        .fixedSize()
+                    Image(systemName: showingRatioMenu ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
                 .foregroundStyle(.white)
-                .shadow(color: Theme.keyline, radius: 1)
-                .rotationEffect(.degrees(iconAngle))
-                .padding(16)
-                .accessibilityLabel(camera.flashMode == .on ? "Flash on" : "Flash auto")
-                .transition(.opacity)
+                .frame(height: 44)
+                .padding(.trailing, 8)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Aspect, \(ratio.rawValue)")
+            .popover(isPresented: $showingRatioMenu) {
+                RatioMenu(ratio: $ratio, isPresented: $showingRatioMenu)
+            }
+
+            Spacer()
+
+            if camera.hasFlash {
+                topButton(symbol: camera.flashMode.symbol, isOn: camera.flashMode != .off, width: 40, label: "Flash, \(camera.flashMode.title)") {
+                    camera.cycleFlash()
+                }
+            }
+
+            Button {
+                showingCameraMenu = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "camera.aperture")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(cameraOptionsAreOn ? Theme.accent : Color.white)
+                        .rotationEffect(.degrees(iconAngle))
+                    Image(systemName: showingCameraMenu ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 44)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Camera options")
+            .popover(isPresented: $showingCameraMenu) {
+                CameraMenu(camera: camera, timer: $timer)
+            }
+
+            topButton(symbol: "ellipsis", isOn: false, label: "Settings") {
+                showingSettings = true
+            }
         }
+        .padding(.leading, 20)
+        .padding(.trailing, 12)
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+    }
+
+    private var cameraOptionsAreOn: Bool {
+        camera.isNightOn || timer != 0 || camera.exposureCompensation != 0
+    }
+
+    private func topButton(symbol: String, isOn: Bool, width: CGFloat = 44, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(isOn ? Theme.accent : Color.white)
+                .rotationEffect(.degrees(iconAngle))
+                .frame(width: width, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder
@@ -292,54 +371,6 @@ struct ContentView: View {
                 motion.noteZoomTaken()
                 camera.zoom(to: origin * value.magnification, animated: false)
             }
-    }
-
-    private var optionsMenu: some View {
-        Menu {
-            if camera.hasFlash {
-                Picker(selection: flashBinding) {
-                    Text("Auto").tag(AVCaptureDevice.FlashMode.auto)
-                    Text("On").tag(AVCaptureDevice.FlashMode.on)
-                    Text("Off").tag(AVCaptureDevice.FlashMode.off)
-                } label: {
-                    Label("Flash", systemImage: "bolt")
-                }
-                .pickerStyle(.menu)
-            }
-
-            Picker(selection: $ratio) {
-                ForEach(CaptureRatio.allCases, id: \.self) { option in
-                    Text(option.rawValue).tag(option)
-                }
-            } label: {
-                Label("Aspect Ratio", systemImage: "aspectratio")
-            }
-            .pickerStyle(.menu)
-            .disabled(!isIdle)
-
-            Divider()
-
-            Button("Settings", systemImage: "gearshape") {
-                showingSettings = true
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.body.weight(.medium))
-                .foregroundStyle(.white)
-                .rotationEffect(.degrees(iconAngle))
-                .frame(width: 52, height: 44)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel("Options")
-    }
-
-    private var flashBinding: Binding<AVCaptureDevice.FlashMode> {
-        Binding(
-            get: { camera.flashMode },
-            set: { newValue in
-                withAnimation(Theme.quick) { camera.flashMode = newValue }
-            }
-        )
     }
 
     private var controls: some View {
@@ -401,12 +432,21 @@ struct ContentView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($shutterHeld) { _, held, _ in
-                    if !held {
-                        takePhoto()
-                    }
                     held = true
                 }
+                .onChanged { _ in
+                    if !shutterFired {
+                        shutterFired = true
+                        takePhoto()
+                    }
+                }
         )
+        // Follows the gesture state, which also resets if the press is interrupted.
+        .onChange(of: shutterHeld) { _, held in
+            if !held {
+                shutterFired = false
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel("Take photo")
         .accessibilityValue(motion.guide.isAligned ? "Lined up" : "")
@@ -453,6 +493,9 @@ struct ContentView: View {
     private func handle(_ phase: ScenePhase) {
         switch phase {
         case .background:
+            countdownTask?.cancel()
+            countdownTask = nil
+            countdown = nil
             // Turns made while the app is away can't be measured, so the guide would be wrong.
             stopGuiding()
             motion.stop()
@@ -503,8 +546,29 @@ struct ContentView: View {
         }
     }
 
+    /// Shoots now, or starts the timer. Pressing again during a countdown cancels it.
     private func takePhoto() {
-        camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
+        if let running = countdownTask {
+            running.cancel()
+            countdownTask = nil
+            countdown = nil
+            return
+        }
+        guard timer > 0 else {
+            camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
+            return
+        }
+        let seconds = timer
+        countdownTask = Task {
+            for remaining in stride(from: seconds, to: 0, by: -1) {
+                countdown = remaining
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+            }
+            countdown = nil
+            countdownTask = nil
+            camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
+        }
     }
 
     private func blinkShutter() {
@@ -621,15 +685,10 @@ private struct HintView: View {
                 Text(message)
                     .font(.subheadline)
             } else if isScanning {
-                if scanIsSlow {
-                    Text("Still looking")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                Text(scanIsSlow ? "Still looking…" : "Finding your shot…")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.accent)
             } else if let target = motion.target {
-                Text(target.displayLabel)
-                    .font(.headline)
-                    .lineLimit(1)
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

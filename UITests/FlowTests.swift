@@ -48,37 +48,87 @@ final class FlowTests: XCTestCase {
         shoot("large-text-develop")
     }
 
-    func testIdleAndOptions() throws {
+    /// A tap away from a popover closes it.
+    private func closeMenu() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
+        sleep(1)
+    }
+
+    /// A switch only flips when its own right side is tapped, not the middle of its row.
+    private func flip(_ toggle: XCUIElement) {
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+    }
+
+    func testTopBarAndItsMenus() throws {
         try launch()
         XCTAssertTrue(app.buttons["Zoom .5x"].exists)
+        XCTAssertFalse(app.buttons["Options"].exists, "The old menu should be gone")
         shoot("e2e-01-idle")
 
-        app.buttons["Options"].tap()
-        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 3))
-        shoot("e2e-02-menu")
+        app.buttons["Flash, Off"].tap()
+        XCTAssertTrue(app.buttons["Flash, Auto"].waitForExistence(timeout: 2))
+        app.buttons["Flash, Auto"].tap()
+        app.buttons["Flash, On"].tap()
+        XCTAssertTrue(app.buttons["Flash, Off"].waitForExistence(timeout: 2))
 
-        app.buttons["Aspect Ratio"].tap()
-        XCTAssertTrue(app.buttons["1:1"].waitForExistence(timeout: 3))
-        shoot("e2e-03-ratios")
-        app.buttons["1:1"].tap()
+        app.buttons["Aspect, 3:4"].tap()
+        XCTAssertTrue(app.buttons["1:1"].waitForExistence(timeout: 2))
         sleep(1)
-        shoot("e2e-04-square")
+        shoot("e2e-02-ratio-menu")
+        app.buttons["1:1"].tap()
+        XCTAssertTrue(app.buttons["Aspect, 1:1"].waitForExistence(timeout: 2))
+        sleep(1)
+        shoot("e2e-03-square")
+        app.buttons["Aspect, 1:1"].tap()
+        XCTAssertTrue(app.buttons["3:4"].waitForExistence(timeout: 2))
+        app.buttons["3:4"].tap()
+        XCTAssertTrue(app.buttons["Aspect, 3:4"].waitForExistence(timeout: 2))
 
-        app.buttons["Options"].tap()
-        app.buttons["Flash"].tap()
-        XCTAssertTrue(app.buttons["On"].waitForExistence(timeout: 3))
-        app.buttons["On"].tap()
-        XCTAssertTrue(app.images["Flash on"].waitForExistence(timeout: 3) || app.otherElements["Flash on"].exists)
-        shoot("e2e-05-flash-on")
+        app.buttons["Camera options"].tap()
+        let night = app.switches["Night"]
+        XCTAssertTrue(night.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.sliders["Exposure"].exists)
+        flip(night)
+        sleep(1)
+        XCTAssertEqual(night.value as? String, "1")
+        shoot("e2e-04-camera-menu")
+        flip(night)
+        closeMenu()
+
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        shoot("e2e-05-settings")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["Take photo"].waitForExistence(timeout: 3))
+    }
+
+    func testTimerCountsDownThenShoots() throws {
+        try launch()
+        app.buttons["Camera options"].tap()
+        XCTAssertTrue(app.buttons["3s"].waitForExistence(timeout: 2))
+        app.buttons["3s"].tap()
+        closeMenu()
+
+        app.buttons["Take photo"].tap()
+        shoot("e2e-06-timer")
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 8))
+    }
+
+    func testScanningShowsWhatItIsDoing() throws {
+        try launch(scan: "slow")
+        app.buttons["Scan for a shot"].tap()
+        expectText("Finding your shot…")
+        shoot("e2e-09-scanning")
     }
 
     func testFullFlowFromScanToSave() throws {
         try launch()
 
         app.buttons["Scan for a shot"].tap()
-        expectText("Distant church spires")
+        expectText("distant church spires")
         shoot("e2e-10-guided")
         XCTAssertTrue(app.buttons["Scan again"].waitForExistence(timeout: 5))
+        sleep(1)
         shoot("e2e-11-ready")
 
         app.buttons["Scan again"].tap()

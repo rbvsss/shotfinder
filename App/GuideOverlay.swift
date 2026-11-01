@@ -8,99 +8,185 @@ struct LiveGuide: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: isPaused)) { _ in
             let snapshot = motion.snapshot()
-            GuideOverlay(roll: snapshot.roll, projection: snapshot.projection, isAligned: motion.guide.isAligned)
+            GuideOverlay(
+                roll: snapshot.roll,
+                showsLevel: !snapshot.isFlat,
+                projection: snapshot.projection,
+                label: motion.target?.label,
+                isAligned: motion.guide.isAligned
+            )
         }
     }
 }
 
-/// Marks that lead to the shot and get out of the way. Corners show where it is, or a chevron points
-/// the way if it is out of view. Once you are lined up, the viewfinder is left empty.
+/// The box around the shot, a dashed line to it from a crosshair fixed mid-view, the level, and the shot's name.
 struct GuideOverlay: View {
     let roll: Double
+    let showsLevel: Bool
     let projection: GuideProjection?
+    let label: String?
     let isAligned: Bool
 
-    /// How far inside the viewfinder's edge the chevron sits.
-    private static let chevronInset: CGFloat = 24
+    /// The level only appears near level, as on the iPhone camera, and joins up when it gets there.
+    private static let levelRange = 15 * Double.pi / 180
+    private static let levelTolerance = 1.5 * Double.pi / 180
+    /// How far off the view the dashed line is drawn, so a shot far away can't make a huge path.
+    private static let lineReach = 3.0
+    /// The space the dashed line leaves around the crosshair.
+    private static let lineGap: CGFloat = 28
+    private static let lineWidth: CGFloat = 2.7
+    /// Where the arrows sit along the line, from the box towards the crosshair.
+    private static let arrowPositions: [CGFloat] = [0.38, 0.65]
 
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
 
             ZStack {
-                if let projection {
-                    if projection.isInView {
-                        if !projection.isZoomed || !projection.isCentered {
-                            // A dark outline drawn under the white, cheaper to redraw every frame than a shadow.
-                            ZStack {
-                                CornerMarks(arm: 18)
-                                    .stroke(Theme.keyline, style: StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
-                                CornerMarks(arm: 18)
-                                    .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                            }
-                                .frame(width: projection.width * size.width, height: projection.height * size.height)
-                                .position(x: projection.x * size.width, y: projection.y * size.height)
-                        }
-                    } else {
-                        chevron(pointingTo: projection, in: size)
-                    }
+                if let projection, !isAligned {
+                    dashedLine(from: projection, in: size)
+
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Theme.accent, lineWidth: 4)
+                        .shadow(color: Theme.accent.opacity(0.8), radius: 16)
+                        .frame(width: projection.width * size.width, height: projection.height * size.height)
+                        .position(x: projection.x * size.width, y: projection.y * size.height)
                 }
 
-                levelLine(width: size.width * 0.2)
-                    .shadow(color: Theme.keyline, radius: 1)
-                    .position(x: size.width / 2, y: size.height / 2)
+                if showsLevel, abs(tilt) < Self.levelRange {
+                    levelLine(width: size.width * 0.396)
+                        .rotationEffect(.radians(-quarterTurn))
+                        .position(x: size.width / 2, y: size.height / 2)
+                }
+
+                if label != nil {
+                    crosshair
+                        .position(x: size.width / 2, y: size.height / 2)
+                }
+
+                if let label {
+                    pill(label)
+                        .padding(.top, 12)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                }
             }
-            .opacity(isAligned ? 0 : 1)
-            .animation(.easeOut(duration: 0.12), value: isAligned)
         }
         .clipped()
         .allowsHitTesting(false)
     }
 
-    private func chevron(pointingTo projection: GuideProjection, in size: CGSize) -> some View {
-        let dx = (projection.x - 0.5) * size.width
-        let dy = (projection.y - 0.5) * size.height
-        // Slides along the edge of the viewfinder, on the straight line towards the shot.
-        let reachX = size.width / 2 - Self.chevronInset
-        let reachY = size.height / 2 - Self.chevronInset
-        let scale = min(reachX / max(abs(dx), 1), reachY / max(abs(dy), 1))
-        return Image(systemName: "chevron.up")
-            .font(.title2.weight(.semibold))
-            .foregroundStyle(.white)
-            .shadow(color: Theme.keyline, radius: 1)
-            .rotationEffect(.radians(atan2(dx, -dy)))
-            .position(x: size.width / 2 + dx * scale, y: size.height / 2 + dy * scale)
+    @ViewBuilder
+    private func dashedLine(from projection: GuideProjection, in size: CGSize) -> some View {
+        let reach = Self.lineReach
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let box = CGPoint(
+            x: min(max(projection.x, -reach), reach) * size.width,
+            y: min(max(projection.y, -reach), reach) * size.height
+        )
+        let distance = hypot(box.x - center.x, box.y - center.y)
+
+        if distance > Self.lineGap {
+            let length = distance - Self.lineGap
+            let along = CGPoint(x: (center.x - box.x) / distance, y: (center.y - box.y) / distance)
+            let end = CGPoint(x: box.x + along.x * length, y: box.y + along.y * length)
+            let line = Path { path in
+                path.move(to: box)
+                path.addLine(to: end)
+            }
+
+            line.stroke(Theme.accent.opacity(0.12), lineWidth: Self.lineWidth)
+            line.stroke(
+                Theme.accent.opacity(0.8),
+                style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round, dash: [3.3, 7.7])
+            )
+            arrows(from: box, along: along, length: length)
+                .stroke(Theme.accent.opacity(0.75), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+        }
     }
 
+    /// Small arrows on the line, showing the way the shot moves as you turn towards it.
+    private func arrows(from start: CGPoint, along: CGPoint, length: CGFloat) -> Path {
+        Path { path in
+            for position in Self.arrowPositions {
+                let tip = CGPoint(x: start.x + along.x * length * position, y: start.y + along.y * length * position)
+                let back = CGPoint(x: tip.x - along.x * 2.5, y: tip.y - along.y * 2.5)
+                path.move(to: CGPoint(x: back.x - along.y * 3, y: back.y + along.x * 3))
+                path.addLine(to: tip)
+                path.addLine(to: CGPoint(x: back.x + along.y * 3, y: back.y - along.x * 3))
+            }
+        }
+    }
+
+    /// Stays in the middle of the view while guiding, and turns green when the shot is lined up.
+    private var crosshair: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 9, y: 0))
+            path.addLine(to: CGPoint(x: 9, y: 18))
+            path.move(to: CGPoint(x: 0, y: 9))
+            path.addLine(to: CGPoint(x: 18, y: 9))
+        }
+        .stroke(isAligned ? Color.green : Theme.accent.opacity(0.9), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+        .frame(width: 18, height: 18)
+    }
+
+    private func pill(_ label: String) -> some View {
+        HStack(spacing: 11) {
+            Text(label)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            if isAligned {
+                pillDivider
+                Text("Ready")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.accent)
+            } else if let projection {
+                pillDivider
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .rotationEffect(.radians(atan2(projection.x - 0.5, 0.5 - projection.y)))
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 16)
+        .frame(height: 34)
+        .background(Theme.pill, in: Capsule())
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+    }
+
+    private var pillDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.3))
+            .frame(width: 1, height: 13)
+    }
+
+    /// The nearest upright or sideways position, so the level works however the phone is held.
+    private var quarterTurn: Double {
+        (roll / (.pi / 2)).rounded() * (.pi / 2)
+    }
+
+    private var tilt: Double {
+        roll - quarterTurn
+    }
+
+    @ViewBuilder
     private func levelLine(width: CGFloat) -> some View {
-        HStack(spacing: 6) {
-            Capsule().frame(width: width * 0.14, height: 1.5)
-            Capsule().frame(width: width * 0.62, height: 1.5)
-                .rotationEffect(.radians(-roll))
-            Capsule().frame(width: width * 0.14, height: 1.5)
+        if abs(tilt) < Self.levelTolerance {
+            Capsule()
+                .fill(Theme.accent)
+                .frame(width: width, height: 1.7)
+        } else {
+            HStack(spacing: 1) {
+                Capsule().frame(width: width * 0.184, height: 1.7)
+                Capsule().frame(width: width * 0.628, height: 1.7)
+                    .rotationEffect(.radians(-tilt))
+                Capsule().frame(width: width * 0.184, height: 1.7)
+            }
+            .foregroundStyle(Color.white.opacity(0.67))
         }
-        .foregroundStyle(Color.white.opacity(0.85))
-    }
-}
-
-/// Four corner marks that frame a shot without covering it.
-struct CornerMarks: Shape {
-    let arm: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let reach = min(arm, min(rect.width, rect.height) / 3)
-        var path = Path()
-        for (corner, dx, dy) in [
-            (CGPoint(x: rect.minX, y: rect.minY), reach, reach),
-            (CGPoint(x: rect.maxX, y: rect.minY), -reach, reach),
-            (CGPoint(x: rect.minX, y: rect.maxY), reach, -reach),
-            (CGPoint(x: rect.maxX, y: rect.maxY), -reach, -reach)
-        ] {
-            path.move(to: CGPoint(x: corner.x + dx, y: corner.y))
-            path.addLine(to: corner)
-            path.addLine(to: CGPoint(x: corner.x, y: corner.y + dy))
-        }
-        return path
     }
 }
 
@@ -124,32 +210,5 @@ struct RatioMask: View {
             .fill(Theme.mask)
         }
         .allowsHitTesting(false)
-    }
-}
-
-/// Corner marks around the chosen frame that breathe while a scan is running.
-struct ScanBrackets: View {
-    let crop: CGSize
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dimmed = false
-
-    var body: some View {
-        GeometryReader { geometry in
-            CornerMarks(arm: 28)
-                .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                .padding(18)
-                .frame(width: geometry.size.width * crop.width, height: geometry.size.height * crop.height)
-                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-        }
-        .shadow(color: Theme.keyline, radius: 1)
-        .opacity(reduceMotion ? 0.7 : (dimmed ? 0.45 : 1))
-        .allowsHitTesting(false)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                dimmed = true
-            }
-        }
     }
 }

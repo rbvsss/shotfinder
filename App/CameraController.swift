@@ -37,6 +37,9 @@ final class CameraController: NSObject {
     private(set) var isCapturing = false
     private(set) var shutterBlinks = 0
     private(set) var interruption: String?
+    private(set) var isNightOn = false
+    /// Brightness set in the camera menu, which stays until changed.
+    private(set) var exposureCompensation: Float = 0
     var flashMode: AVCaptureDevice.FlashMode = .off
     var capturedPhoto: CapturedPhoto?
     var errorMessage: String?
@@ -70,6 +73,9 @@ final class CameraController: NSObject {
     private static let placeholderLongEdge: CGFloat = 1200
     private static let frameTimeout: TimeInterval = 3
     private static let maximumDisplayZoom: Double = 15
+    /// Night's limits: slow enough to gather light, short enough to hold by hand.
+    private static let nightExposureLimit = CMTime(value: 1, timescale: 4)
+    private static let nightBoost: Float = 0.5
 
     #if DEBUG
     /// Stands in for a real camera so tests can drive the app on a simulator, which has none.
@@ -361,6 +367,60 @@ final class CameraController: NSObject {
             } catch {
                 DispatchQueue.main.async { self.errorMessage = "Couldn't set the focus." }
             }
+        }
+    }
+
+    func cycleFlash() {
+        switch flashMode {
+        case .off: flashMode = .auto
+        case .auto: flashMode = .on
+        default: flashMode = .off
+        }
+        if flashMode != .off, isNightOn {
+            setNight(false)
+        }
+    }
+
+    func setExposureCompensation(_ value: Float) {
+        exposureCompensation = value
+        applyBias()
+    }
+
+    private func applyBias() {
+        let total = exposureCompensation + (isNightOn ? Self.nightBoost : 0)
+        sessionQueue.async { [self] in
+            guard let camera = device, (try? camera.lockForConfiguration()) != nil else { return }
+            let bias = min(max(total, camera.minExposureTargetBias), camera.maxExposureTargetBias)
+            camera.setExposureTargetBias(bias, completionHandler: nil)
+            camera.unlockForConfiguration()
+        }
+    }
+
+    /// Apple keeps its real Night mode to itself, so this allows slower exposures and a little more
+    /// brightness, on top of the low-light fusion the camera does for quality-first photos.
+    func setNight(_ on: Bool) {
+        isNightOn = on
+        if on {
+            flashMode = .off
+        }
+        applyBias()
+        sessionQueue.async { [self] in
+            guard let camera = device, (try? camera.lockForConfiguration()) != nil else { return }
+            if on {
+                let format = camera.activeFormat
+                let limit = CMTimeMinimum(Self.nightExposureLimit, format.maxExposureDuration)
+                camera.activeMaxExposureDuration = limit
+                if !camera.isAutoVideoFrameRateEnabled,
+                   let slowest = format.videoSupportedFrameRateRanges.map(\.maxFrameDuration).max() {
+                    camera.activeVideoMaxFrameDuration = CMTimeMinimum(limit, slowest)
+                }
+            } else {
+                camera.activeMaxExposureDuration = .invalid
+                if !camera.isAutoVideoFrameRateEnabled {
+                    camera.activeVideoMaxFrameDuration = .invalid
+                }
+            }
+            camera.unlockForConfiguration()
         }
     }
 
