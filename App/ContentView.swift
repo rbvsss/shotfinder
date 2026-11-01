@@ -186,8 +186,9 @@ struct ContentView: View {
                 message: message ?? camera.interruption,
                 showsFirstHint: !hasScanned
             )
-            .frame(minHeight: 64, alignment: .top)
-            .padding(.top, 14)
+            // Short enough that the viewfinder keeps the full width of the screen.
+            .frame(minHeight: 40)
+            .padding(.top, 6)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 0)
@@ -417,8 +418,7 @@ struct ContentView: View {
     private var shutter: some View {
         ZStack {
             Circle()
-                .stroke(motion.guide.isAligned ? Color.accentColor : Color.white, lineWidth: 3)
-                .animation(.easeOut(duration: 0.12), value: motion.guide.isAligned)
+                .stroke(Color.white, lineWidth: 3)
                 .frame(width: 76, height: 76)
             Circle()
                 .fill(Color.white)
