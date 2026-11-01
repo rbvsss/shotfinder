@@ -1,0 +1,38 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build unsigned app
+        run: |
+          xcodebuild \
+            -project ShotFinder.xcodeproj \
+            -scheme ShotFinder \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/ShotFinder.app Payload/
+          zip -qry ShotFinder.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShotFinder-ipa
+          path: ShotFinder.ipa
+          if-no-files-found: error
