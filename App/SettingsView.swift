@@ -44,6 +44,7 @@ struct SettingsView: View {
             }
         }
         .presentationDetents([.medium])
+        .presentationBackground(Color.black)
         // A swipe away shouldn't lose a key you just pasted. Done saves it.
         .interactiveDismissDisabled(apiKey != savedKey)
     }
@@ -56,7 +57,9 @@ struct SettingsView: View {
 
     private func save() {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
+        if trimmed == savedKey {
+            dismiss()
+        } else if trimmed.isEmpty {
             KeyStore.delete()
             dismiss()
         } else if KeyStore.save(trimmed) {

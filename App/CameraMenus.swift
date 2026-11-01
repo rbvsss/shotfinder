@@ -39,7 +39,7 @@ struct RatioMenu: View {
                         if option == ratio {
                             Image(systemName: "checkmark")
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(Theme.accent)
                         }
                     }
                     .padding(.horizontal, 12)

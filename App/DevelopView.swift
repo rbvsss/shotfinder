@@ -130,7 +130,7 @@ struct DevelopView: View {
                         .overlay(alignment: .topTrailing) {
                             if isChanged(option) {
                                 Circle()
-                                    .fill(Color.accentColor)
+                                    .fill(Theme.accent)
                                     .frame(width: 5, height: 5)
                                     .offset(x: -3, y: 3)
                             }
@@ -211,7 +211,7 @@ struct DevelopView: View {
                 .overlay {
                     if isSelected {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(Color.accentColor, lineWidth: 2)
+                            .strokeBorder(Theme.accent, lineWidth: 2)
                     }
                     if isSelected, look != .natural {
                         Image(systemName: "slider.horizontal.3")
@@ -225,7 +225,7 @@ struct DevelopView: View {
                     .font(.caption2.weight(isSelected ? .semibold : .regular))
                     .tracking(0.4)
                     .lineLimit(1)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? Theme.accent : Color.secondary)
             }
         }
         .buttonStyle(.plain)
@@ -260,7 +260,7 @@ struct DevelopView: View {
             VStack(spacing: 6) {
                 Image(systemName: dial.symbol)
                     .font(.subheadline)
-                    .foregroundStyle(settings[dial] != 0 ? Color.accentColor : Color.white)
+                    .foregroundStyle(settings[dial] != 0 ? Theme.accent : Color.white)
                     .frame(width: 40, height: 40)
                     .overlay {
                         Circle().strokeBorder(isSelected ? Color.white : Color.clear, lineWidth: 1)
@@ -307,12 +307,12 @@ struct DevelopView: View {
                     .overlay {
                         if isSelected {
                             RoundedRectangle(cornerRadius: 3)
-                                .strokeBorder(Color.accentColor, lineWidth: 2)
+                                .strokeBorder(Theme.accent, lineWidth: 2)
                         }
                     }
                 Text(frame.title)
                     .font(.caption2)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isSelected ? Theme.accent : Color.secondary)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
@@ -357,7 +357,7 @@ struct DevelopView: View {
                 }
                 .foregroundStyle(.black)
                 .frame(width: 112, height: 46)
-                .background(Color.accentColor, in: Capsule())
+                .background(Theme.accent, in: Capsule())
             }
             .disabled(developer == nil)
             .accessibilityLabel("Save")
@@ -568,7 +568,7 @@ private struct RulerSlider: View {
                 context.fill(Path(tick), with: .color(Color.white.opacity(isMajor ? 0.55 : 0.3)))
             }
             let marker = CGRect(x: size.width * fraction - 1.5, y: 0, width: 3, height: size.height)
-            context.fill(Path(roundedRect: marker, cornerRadius: 1.5), with: .color(Color.accentColor))
+            context.fill(Path(roundedRect: marker, cornerRadius: 1.5), with: .color(Theme.accent))
         }
     }
 

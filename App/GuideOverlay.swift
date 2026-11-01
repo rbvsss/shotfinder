@@ -47,7 +47,7 @@ struct GuideOverlay: View {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .stroke(Theme.keyline, lineWidth: 4.5)
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.accentColor, lineWidth: 3)
+                            .stroke(Theme.accent, lineWidth: 3)
                     }
                     .frame(width: projection.width * size.width, height: projection.height * size.height)
                     .position(x: projection.x * size.width, y: projection.y * size.height)
@@ -84,7 +84,7 @@ struct GuideOverlay: View {
             path.move(to: CGPoint(x: size.width / 2, y: size.height / 2))
             path.addLine(to: end)
         }
-        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+        .stroke(Theme.accent, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
     }
 
     private var crossMark: some View {
@@ -94,7 +94,7 @@ struct GuideOverlay: View {
             path.move(to: CGPoint(x: 0, y: 6))
             path.addLine(to: CGPoint(x: 12, y: 6))
         }
-        .stroke(Color.accentColor, lineWidth: 1.5)
+        .stroke(Theme.accent, lineWidth: 1.5)
         .frame(width: 12, height: 12)
     }
 
@@ -107,7 +107,7 @@ struct GuideOverlay: View {
             if isAligned {
                 pillDivider
                 Text("Ready")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.accent)
             } else if let projection, !projection.isInView {
                 pillDivider
                 Image(systemName: "arrow.up")
@@ -143,7 +143,7 @@ struct GuideOverlay: View {
         if abs(tilt) < Self.levelTolerance {
             ZStack {
                 Capsule()
-                    .fill(Color.accentColor)
+                    .fill(Theme.accent)
                     .frame(width: width, height: 1.5)
                 if isAligned {
                     Capsule()
@@ -198,11 +198,11 @@ struct FocusMark: View {
     var body: some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(Color.accentColor, lineWidth: 1.5)
+                .stroke(Theme.accent, lineWidth: 1.5)
                 .frame(width: 64, height: 64)
             Image(systemName: "sun.max.fill")
                 .font(.footnote)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Theme.accent)
                 .offset(y: -CGFloat(exposure) / 2 * Self.sunTravel)
         }
         .shadow(color: Theme.keyline, radius: 1)

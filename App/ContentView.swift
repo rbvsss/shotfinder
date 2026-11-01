@@ -312,7 +312,7 @@ struct ContentView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "camera.aperture")
                         .font(.title3)
-                        .foregroundStyle(cameraOptionsAreOn ? Color.accentColor : Color.white)
+                        .foregroundStyle(cameraOptionsAreOn ? Theme.accent : Color.white)
                         .rotationEffect(.degrees(iconAngle))
                     Image(systemName: showingCameraMenu ? "chevron.up" : "chevron.down")
                         .font(.caption2.weight(.semibold))
@@ -342,7 +342,7 @@ struct ContentView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.body.weight(.medium))
-                .foregroundStyle(isOn ? Color.accentColor : Color.white)
+                .foregroundStyle(isOn ? Theme.accent : Color.white)
                 .rotationEffect(.degrees(iconAngle))
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -532,7 +532,7 @@ struct ContentView: View {
         Button(action: scanButtonTapped) {
             Image(systemName: scanSymbol)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(scanButtonIsLit ? Color.accentColor : Color.white)
+                .foregroundStyle(scanButtonIsLit ? Theme.accent : Color.white)
                 .contentTransition(.symbolEffect(.replace))
                 .rotationEffect(.degrees(iconAngle))
                 .frame(width: 52, height: 52)
@@ -777,7 +777,7 @@ private struct HintView: View {
                 Text(message)
             } else if isScanning {
                 Text(scanIsSlow ? "Still looking" : "Looking for a shot")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.accent)
             } else if let target = motion.target {
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)
             } else if isDark {
@@ -819,7 +819,7 @@ private struct LensRow: View {
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(isActive ? Theme.accent : Color.secondary)
                         .rotationEffect(.degrees(iconAngle))
                         .frame(width: 42, height: 42)
                         .background(isActive ? Theme.accentWash : Theme.control, in: Circle())

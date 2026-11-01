@@ -59,6 +59,14 @@ final class FlowTests: XCTestCase {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
     }
 
+    /// Drags across a ruler, which sits below its title.
+    private func drag(_ slider: XCUIElement, by fraction: CGFloat) {
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(
+            forDuration: 0.05,
+            thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5 + fraction, dy: 0.8))
+        )
+    }
+
     func testTopRowAndItsMenus() throws {
         try launch()
         XCTAssertTrue(app.buttons["Zoom .5x"].exists)
@@ -183,7 +191,7 @@ final class FlowTests: XCTestCase {
         app.buttons["Adjust"].tap()
         let exposure = app.sliders["Exposure"]
         XCTAssertTrue(exposure.waitForExistence(timeout: 2))
-        exposure.adjust(toNormalizedSliderPosition: 0.7)
+        drag(exposure, by: 0.15)
         app.buttons["Contrast"].tap()
         XCTAssertTrue(app.sliders["Contrast"].waitForExistence(timeout: 2))
         sleep(1)
@@ -192,10 +200,10 @@ final class FlowTests: XCTestCase {
         app.buttons["Effects"].tap()
         let grain = app.sliders["Grain"]
         XCTAssertTrue(grain.waitForExistence(timeout: 2))
-        grain.adjust(toNormalizedSliderPosition: 0.6)
+        drag(grain, by: 0.25)
         app.buttons["Glow"].tap()
         XCTAssertTrue(app.sliders["Glow"].waitForExistence(timeout: 2))
-        app.sliders["Glow"].adjust(toNormalizedSliderPosition: 0.5)
+        drag(app.sliders["Glow"], by: 0.25)
         sleep(1)
         shoot("e2e-16-effects")
 

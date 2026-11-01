@@ -414,16 +414,13 @@ final class PhotoDeveloper {
         return result.cropped(to: image.extent)
     }
 
-    /// A curve through five evenly spaced levels, shaped in the brightness steps the eye sees.
+    /// A curve through five evenly spaced levels. The filter itself works in the steps the eye sees.
     private static func toneCurve(on image: CIImage, levels: [Double]) -> CIImage {
         var parameters: [String: Any] = [:]
         for (index, level) in levels.enumerated() {
             parameters["inputPoint\(index)"] = CIVector(x: CGFloat(index) / 4, y: CGFloat(level))
         }
-        return image
-            .applyingFilter("CILinearToSRGBToneCurve")
-            .applyingFilter("CIToneCurve", parameters: parameters)
-            .applyingFilter("CISRGBToneCurveToLinear")
+        return image.applyingFilter("CIToneCurve", parameters: parameters)
     }
 
     /// Lifts the blacks and pulls the whites down, like an old print.
