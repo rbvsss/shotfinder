@@ -189,8 +189,15 @@ final class PhotoDeveloper {
         let longEdge = max(image.extent.width, image.extent.height)
         let cell = max(1, longEdge / grainReferenceEdge)
         let strength = CGFloat(amount) * 1.6
+        let area = image.extent
+            .applying(CGAffineTransform(scaleX: 1 / cell, y: 1 / cell))
+            .insetBy(dx: -8, dy: -8)
+            .integral
 
+        // The generator's alpha is random too, which would darken everything if left in place.
         let grain = noise
+            .cropped(to: area)
+            .settingAlphaOne(in: area)
             .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])
             .transformed(by: CGAffineTransform(scaleX: cell, y: cell))
             .applyingGaussianBlur(sigma: 0.45 * cell)

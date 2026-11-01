@@ -89,7 +89,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     @MainActor
-    func testIconAndContactSheet() throws {
+    func testGrainAtFullSize() throws {
         let photo = try samplePhoto()
         let developer = try PhotoDeveloper(photo: CapturedPhoto(data: photo, rawData: nil), ratio: .threeFour)
         var settings = DevelopSettings()
