@@ -216,6 +216,13 @@ final class PhotoDeveloper {
         return UIImage(cgImage: rendered)
     }
 
+    #if DEBUG
+    /// Renders at full size, so tests can compare the saved photo with the preview.
+    func renderFullSize(_ settings: DevelopSettings) -> UIImage? {
+        image(from: Self.develop(source, settings))
+    }
+    #endif
+
     /// Writes the finished photo to the library.
     func save(_ settings: DevelopSettings) async throws {
         guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
@@ -250,7 +257,8 @@ final class PhotoDeveloper {
         guard amount > 0, let noise = CIFilter.randomGenerator().outputImage else { return image }
         let longEdge = max(image.extent.width, image.extent.height)
         let cell = max(1, longEdge / grainReferenceEdge)
-        let strength = CGFloat(amount) * 1.1
+        // Upscaling softens the noise, so the unscaled preview needs less to match the saved photo.
+        let strength = CGFloat(amount) * (cell > 1 ? 0.68 : 0.42)
         let area = image.extent
             .applying(CGAffineTransform(scaleX: 1 / cell, y: 1 / cell))
             .insetBy(dx: -8, dy: -8)
@@ -272,7 +280,30 @@ final class PhotoDeveloper {
             ])
             .cropped(to: image.extent)
 
-        return grain.applyingFilter("CISoftLightBlendMode", parameters: [kCIInputBackgroundImageKey: image])
+        // A flat 0.5, which leaves the photo unchanged in a linear light blend.
+        let neutral = grain.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBiasVector": CIVector(x: 0.5, y: 0.5, z: 0.5, w: 1)
+        ])
+
+        // Follows the photo's brightness: none at black, most in the midtones, some in highlights.
+        let luma = CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0)
+        let mask = image
+            .applyingFilter("CIColorMatrix", parameters: ["inputRVector": luma, "inputGVector": luma, "inputBVector": luma])
+            .applyingFilter("CIToneCurve", parameters: [
+                "inputPoint0": CIVector(x: 0, y: 0),
+                "inputPoint1": CIVector(x: 0.25, y: 0.42),
+                "inputPoint2": CIVector(x: 0.5, y: 0.68),
+                "inputPoint3": CIVector(x: 0.75, y: 0.70),
+                "inputPoint4": CIVector(x: 1, y: 0.50)
+            ])
+
+        return grain
+            .applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: neutral, kCIInputMaskImageKey: mask])
+            .applyingFilter("CILinearLightBlendMode", parameters: [kCIInputBackgroundImageKey: image])
     }
 
     /// Centre-crops to the ratio, turning it sideways if the phone was held sideways.

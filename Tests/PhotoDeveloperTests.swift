@@ -81,6 +81,50 @@ final class PhotoDeveloperTests: XCTestCase {
         }
     }
 
+    /// Spread of brightness values, in 8-bit levels, across a square patch from the middle.
+    private func noise(in image: UIImage, side: Int = 400) throws -> Double {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        // Draws at the preview's scale, so a full-size render is averaged down as a viewer would see it.
+        let scale = CGFloat(1500) / CGFloat(max(cgImage.width, cgImage.height))
+        let width = CGFloat(cgImage.width) * scale
+        let height = CGFloat(cgImage.height) * scale
+        context.interpolationQuality = .high
+        context.draw(cgImage, in: CGRect(x: (CGFloat(side) - width) / 2, y: (CGFloat(side) - height) / 2, width: width, height: height))
+        let values = stride(from: 0, to: pixels.count, by: 4).map { Double(pixels[$0 + 1]) }
+        let mean = values.reduce(0, +) / Double(values.count)
+        return (values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(values.count)).squareRoot()
+    }
+
+    func testSavedPhotoHasAboutAsMuchGrainAsThePreview() throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 3024, height: 4032), format: {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            return format
+        }())
+        let grey = renderer.image { context in
+            UIColor(white: 0.5, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 3024, height: 4032))
+        }
+        let ready = try PhotoDeveloper(data: XCTUnwrap(grey.jpegData(compressionQuality: 1)), ratio: .threeFour)
+        for level in [GrainLevel.fine, .heavy] {
+            var settings = DevelopSettings()
+            settings.grain = level
+            let preview = try noise(in: XCTUnwrap(ready.renderPreview(settings)))
+            let saved = try noise(in: XCTUnwrap(ready.renderFullSize(settings)))
+            print("GRAIN \(level.rawValue): preview \(preview), saved \(saved)")
+            XCTAssertGreaterThan(preview, 1, level.rawValue)
+            XCTAssertGreaterThan(saved / preview, 0.6, "\(level.rawValue): preview \(preview), saved \(saved)")
+            XCTAssertLessThan(saved / preview, 1.6, "\(level.rawValue): preview \(preview), saved \(saved)")
+        }
+    }
+
     func testFramesAddTheirMargins() throws {
         let ready = try developer()
         let plain = try XCTUnwrap(ready.renderPreview(DevelopSettings()))

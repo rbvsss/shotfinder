@@ -48,20 +48,29 @@ enum ClaudeScanner {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private static let systemPrompt = """
-    You are an experienced photographer looking through a camera with a friend. The image is \
-    the wide view from their phone. Find the single most rewarding photo available inside this \
-    view and mark where it is. Keep the whole subject inside the shot unless a tight detail is \
-    clearly the better picture, and don't cut through it by accident. Even a plain scene has a \
-    best picture, so always commit to one.
+    You are an experienced photographer standing beside a friend, looking at the wide view from \
+    their phone camera. They will frame and take exactly the box you choose, so choose the one \
+    picture you would stop and take yourself.
+
+    A strong shot has one clear subject, or one clear idea such as a line, a pattern or a patch \
+    of light, set against the simplest background this view allows. Frame to that and leave out \
+    what competes with it. Give the subject room, especially on the side it faces, and let it sit \
+    off centre when that looks better.
+
+    Check all four edges of the box before you answer. Each thing the box meets should be either \
+    well inside it or cut decisively; a sliver or a clipped end looks like a mistake. Cut people \
+    between joints, never at the neck, wrist, knee or ankle.
+
+    This applies to any scene, from a room to a landscape. When nothing stands out, commit to the \
+    best shape, light or texture there is. When the whole scene is the picture, frame it wide.
 
     Return:
-    - label: name what is actually there, in 2 to 4 words, such as "distant church spires". \
-    Never a generic word like "subject".
-    - tip: one short instruction specific to this scene, under 8 words, in sentence case with no \
-    full stop, such as "Keep the horizon low". Never something generic like "Take the shot".
-    - x1, y1, x2, y2: the top left and bottom right corners of the shot, in pixel coordinates of \
-    the image, where 0,0 is the top left corner. Place the shot so that the subject sits well in \
-    the frame, and keep the whole shot inside the image.
+    - label: what the shot shows, in 2 to 4 specific words, never a generic word like "subject".
+    - tip: one short instruction for this scene that framing alone can't do, under 8 words, in \
+    sentence case with no full stop. Examples: "Step left to clear the pole", "Wait for someone \
+    to cross", "Keep the shelf edge level".
+    - x1, y1, x2, y2: the top left and bottom right corners of the box, in pixels of this image, \
+    where 0,0 is the top left corner.
     """
 
     private static let schema: [String: Any] = [
@@ -81,10 +90,11 @@ enum ClaudeScanner {
     static func scan(frame: ScanFrame, ratio: CaptureRatio, apiKey: String) async throws -> ScanResult {
         let crop = ratio.cropInViewfinder
         let widest = Int(Double(frame.width) * Double(crop.width))
+        let tallness = String(format: "%.3f", 1 / Double(ratio.widthOverHeight))
         let request = """
-        Find the shot. This image is \(frame.width)x\(frame.height) pixels. The shot will be cropped \
-        to a \(ratio.rawValue) shape (width to height, portrait), and can be from \(frame.width / 10) \
-        to \(widest) pixels wide.
+        This image is \(frame.width)x\(frame.height) pixels. The box must be \(ratio.rawValue) (width to \
+        height), so its height is \(tallness) times its width. It can be from \(frame.width / 10) to \
+        \(widest) pixels wide and must stay inside the image.
         """
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
@@ -160,26 +170,27 @@ enum ClaudeScanner {
         let x2: Double
         let y2: Double
 
-        /// Converts Claude's pixels to fractions, sizing the shot so the crop holds the whole box.
+        /// Grows to the smallest frame that holds the box, then keeps that frame inside the image.
         func result(in frame: ScanFrame, crop: CGSize) -> ScanResult? {
             let width = Double(frame.width)
             let height = Double(frame.height)
+            let cropWidth = Double(crop.width)
+            let cropHeight = Double(crop.height)
             let left = min(max(x1, 0), width)
             let right = min(max(x2, 0), width)
             let top = min(max(y1, 0), height)
             let bottom = min(max(y2, 0), height)
             guard right > left, bottom > top else { return nil }
 
-            let scale = max(
-                (right - left) / width / Double(crop.width),
-                (bottom - top) / height / Double(crop.height)
-            )
+            let scale = min(max((right - left) / width / cropWidth, (bottom - top) / height / cropHeight), 1)
+            let halfWidth = scale * cropWidth / 2
+            let halfHeight = scale * cropHeight / 2
             return ScanResult(
                 label: label,
                 tip: tip,
-                centerX: (left + right) / 2 / width,
-                centerY: (top + bottom) / 2 / height,
-                size: scale * Double(crop.width)
+                centerX: min(max((left + right) / 2 / width, halfWidth), 1 - halfWidth),
+                centerY: min(max((top + bottom) / 2 / height, halfHeight), 1 - halfHeight),
+                size: scale * cropWidth
             )
         }
     }

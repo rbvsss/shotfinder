@@ -96,6 +96,26 @@ final class ClaudeScannerTests: XCTestCase {
         XCTAssertEqual(result.size, 2.0 / 3.0, accuracy: 0.0001)
     }
 
+    func testOversizedBoxFillsTheCropAndStaysInTheImage() async throws {
+        StubProtocol.body = answer(x1: 0, y1: 0, x2: 900, y2: 1200)
+
+        let result = try await scan()
+
+        // The square crop can't be taller than three quarters of the image.
+        XCTAssertEqual(result.size, 1, accuracy: 0.0001)
+        XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.5, accuracy: 0.0001)
+    }
+
+    func testFrameNearAnEdgeIsPulledInsideTheImage() async throws {
+        StubProtocol.body = answer(x1: 0, y1: 0, x2: 100, y2: 900)
+
+        let result = try await scan()
+
+        XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.375, accuracy: 0.0001)
+    }
+
     func testEmptyBoxIsRejected() async {
         await assertFails(status: 200, json: String(decoding: answer(x1: 500, y1: 500, x2: 400, y2: 400), as: UTF8.self)) {
             if case .badResponse = $0 { return true }
