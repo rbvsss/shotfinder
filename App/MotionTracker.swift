@@ -93,7 +93,8 @@ final class MotionTracker {
 
     /// The latest position for drawing. Cheap enough to call every frame.
     func snapshot() -> (roll: Double, projection: GuideProjection?) {
-        lock.withLock { (live.roll, Self.projection(in: live)) }
+        // Pointing straight up or down there is no horizon, and the reading is only noise.
+        lock.withLock { (live.isFlat ? 0 : live.roll, Self.projection(in: live)) }
     }
 
     /// Rotation for a photo so it comes out upright however the phone is held.
@@ -178,9 +179,10 @@ final class MotionTracker {
         guard let projection = projection(in: live) else { return GuideState(isBehind: true) }
 
         // Harder to enter than to leave, so the buzz and the colour don't chatter at the edge.
+        let isLevel = live.isFlat || abs(live.roll) < (live.guide.isAligned ? alignedLevelTolerance : levelTolerance)
         let isAligned = live.guide.isAligned
-            ? projection.staysAligned && abs(live.roll) < alignedLevelTolerance
-            : projection.isCentered && projection.isZoomed && abs(live.roll) < levelTolerance
+            ? projection.staysAligned && isLevel
+            : projection.isCentered && projection.isZoomed && isLevel
 
         let wantsAutoZoom = !live.zoomIsManual
             && projection.fill < 0.95

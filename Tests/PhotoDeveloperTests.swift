@@ -118,7 +118,6 @@ final class PhotoDeveloperTests: XCTestCase {
             settings.grain = level
             let preview = try noise(in: XCTUnwrap(ready.renderPreview(settings)))
             let saved = try noise(in: XCTUnwrap(ready.renderFullSize(settings)))
-            print("GRAIN \(level.rawValue): preview \(preview), saved \(saved)")
             XCTAssertGreaterThan(preview, 1, level.rawValue)
             XCTAssertGreaterThan(saved / preview, 0.6, "\(level.rawValue): preview \(preview), saved \(saved)")
             XCTAssertLessThan(saved / preview, 1.6, "\(level.rawValue): preview \(preview), saved \(saved)")

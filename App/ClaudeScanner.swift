@@ -98,7 +98,7 @@ enum ClaudeScanner {
         """
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
-            "max_tokens": 4000,
+            "max_tokens": 16000,
             "fallbacks": "default",
             "output_config": [
                 "effort": "low",
@@ -200,6 +200,7 @@ enum ClaudeScanner {
         if message?.lowercased().contains("credit") == true { return .noCredits }
         switch status {
         case 401, 403: return .rejectedKey
+        case 402: return .noCredits
         case 429, 500, 503, 529: return .busy
         default: return .api(message ?? "The scan failed (error \(status)).")
         }

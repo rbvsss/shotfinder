@@ -298,7 +298,9 @@ final class CameraController: NSObject {
         let displayValues = factors
             .filter { $0 >= minimum && $0 <= longest }
             .map { $0 / wideFactor }
-        return Array(Array(Set(displayValues)).sorted().prefix(4))
+        let sorted = Array(Set(displayValues)).sorted()
+        // If the phone reports more, keep the longest lens rather than a crop below it.
+        return sorted.count > 4 ? Array(sorted.prefix(3)) + [sorted[sorted.count - 1]] : sorted
     }
 
     /// Moves to a zoom given as shown on the lens buttons, where 1 is the main camera.

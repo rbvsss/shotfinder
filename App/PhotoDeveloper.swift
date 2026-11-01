@@ -46,10 +46,8 @@ enum Look: String, CaseIterable, Identifiable {
     }
 }
 
-enum PhotoFrame: String, CaseIterable, Identifiable {
+enum PhotoFrame: String {
     case none, border, mat
-
-    var id: String { rawValue }
 
     var title: String {
         switch self {
@@ -258,7 +256,7 @@ final class PhotoDeveloper {
         let longEdge = max(image.extent.width, image.extent.height)
         let cell = max(1, longEdge / grainReferenceEdge)
         // Upscaling softens the noise, so the unscaled preview needs less to match the saved photo.
-        let strength = CGFloat(amount) * (cell > 1 ? 0.68 : 0.42)
+        let strength = CGFloat(amount) * (cell > 1 ? 0.68 : 0.53)
         let area = image.extent
             .applying(CGAffineTransform(scaleX: 1 / cell, y: 1 / cell))
             .insetBy(dx: -8, dy: -8)

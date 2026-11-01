@@ -118,8 +118,8 @@ struct ContentView: View {
             capturing
         }
         .sensoryFeedback(.success, trigger: saves)
-        .onCameraCaptureEvent(isEnabled: camera.status == .ready) { event in
-            if event.phase == .ended, camera.capturedPhoto == nil, !showingSettings {
+        .onCameraCaptureEvent(isEnabled: camera.status == .ready && camera.capturedPhoto == nil && !showingSettings) { event in
+            if event.phase == .ended {
                 takePhoto()
             }
         }
@@ -660,8 +660,8 @@ private struct LensRow: View {
                 .accessibilityLabel("Zoom \(label(lens))")
             }
         }
-        .sensoryFeedback(.selection, trigger: activeLens) { _, _ in
-            isShown
+        .sensoryFeedback(.selection, trigger: activeLens) { old, _ in
+            isShown && old != nil
         }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }

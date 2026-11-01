@@ -37,6 +37,8 @@ struct SettingsView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        // A swipe away shouldn't lose a key you just pasted. Done saves it.
+        .interactiveDismissDisabled(apiKey != (KeyStore.load() ?? ""))
     }
 
     private var footer: String {

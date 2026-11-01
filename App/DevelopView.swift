@@ -59,7 +59,9 @@ struct DevelopView: View {
                 .padding(.bottom, 8)
         }
         .background(Color.black.ignoresSafeArea())
-        .sensoryFeedback(.selection, trigger: settings)
+        .sensoryFeedback(.selection, trigger: settings) { _, _ in
+            developer != nil
+        }
         .onAppear(perform: loadSettings)
         .task { await prepareQuickPreview() }
         .task(id: photo.data != nil) { await prepare() }
@@ -84,7 +86,7 @@ struct DevelopView: View {
                     }
                 }
                 // Hold the photo to see it without the look or grain.
-                .onLongPressGesture(minimumDuration: 0.15, maximumDistance: 40) {
+                .onLongPressGesture(minimumDuration: .infinity, maximumDistance: 40) {
                 } onPressingChanged: { pressing in
                     if pressing {
                         loadOriginal()
