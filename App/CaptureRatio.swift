@@ -24,10 +24,4 @@ enum CaptureRatio: String, CaseIterable {
         }
         return CGSize(width: widthOverHeight / sensor, height: 1)
     }
-
-    var next: CaptureRatio {
-        let all = Self.allCases
-        let index = all.firstIndex(of: self) ?? 0
-        return all[(index + 1) % all.count]
-    }
 }

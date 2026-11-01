@@ -14,39 +14,22 @@ struct ContentView: View {
     private static let keepAwakeLimit: UInt64 = 120_000_000_000
     /// How long a scan can run before saying so.
     private static let slowScanDelay: UInt64 = 8_000_000_000
-    /// How long a press must rest in place to lock focus.
-    private static let focusLockDelay: UInt64 = 600_000_000
-    /// How long the focus square stays after you let go.
-    private static let focusMarkDelay: UInt64 = 2_000_000_000
-    /// How far a finger can move and still count as a tap or a hold.
-    private static let touchSlop: CGFloat = 12
-    /// Dragging this many points changes brightness by the range below.
-    private static let exposureDragLength: CGFloat = 150
-    private static let exposureDragRange: Float = 2
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("camera.ratio") private var ratio = CaptureRatio.threeFour
     @AppStorage("camera.hasScanned") private var hasScanned = false
-    @AppStorage("camera.timer") private var timer = 0
-    @AppStorage("camera.grid") private var showsGrid = false
-    @AppStorage("camera.level") private var showsLevel = true
     @State private var isScanning = false
     @State private var scanIsSlow = false
     @State private var scanTask: Task<Void, Never>?
     @State private var message: String?
-    @State private var sheet: ActiveSheet?
-    @State private var countdown: Int?
-    @State private var countdownTask: Task<Void, Never>?
+    @State private var showingSettings = false
     @State private var lastPhoto: UIImage?
     @State private var saves = 0
     @GestureState private var pinchStartZoom: Double?
     @State private var focusPoint: CGPoint?
-    @State private var focusMarkTask: Task<Void, Never>?
-    @State private var touch: ViewfinderTouch?
     @State private var shutterBlink = false
     @GestureState private var shutterHeld = false
-    @State private var shutterFired = false
     @State private var iconAngle = 0.0
     @State private var idleStop: Task<Void, Never>?
     /// The zoom to go back to after a scan, since scanning switches to the widest lens.
@@ -59,7 +42,6 @@ struct ContentView: View {
             switch camera.status {
             case .starting, .ready:
                 cameraScreen
-                topButtons
             case .denied:
                 permissionNotice
             case .unavailable:
@@ -86,23 +68,8 @@ struct ContentView: View {
         .animation(Theme.quick, value: camera.capturedPhoto?.id)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
-        // The top buttons sit at the screen's edge, so a tap must not wait on the system's swipe.
-        .defersSystemGestures(on: .top)
-        .sheet(item: $sheet) { active in
-            switch active {
-            case .controls:
-                ControlsPanel(
-                    camera: camera,
-                    canChangeRatio: isIdle,
-                    ratio: $ratio,
-                    timer: $timer,
-                    showsGrid: $showsGrid,
-                    showsLevel: $showsLevel,
-                    onOpenSettings: { sheet = .settings }
-                )
-            case .settings:
-                SettingsView()
-            }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
         }
         .onChange(of: camera.errorMessage) { _, newMessage in
             if let newMessage {
@@ -167,11 +134,7 @@ struct ContentView: View {
             capturing
         }
         .sensoryFeedback(.success, trigger: saves)
-        .sensoryFeedback(.selection, trigger: countdown)
-        .sensoryFeedback(.impact(weight: .medium), trigger: camera.isFocusLocked) { _, locked in
-            locked
-        }
-        .onCameraCaptureEvent(isEnabled: camera.status == .ready && camera.capturedPhoto == nil && sheet == nil) { event in
+        .onCameraCaptureEvent(isEnabled: camera.status == .ready && camera.capturedPhoto == nil && !showingSettings) { event in
             if event.phase == .ended {
                 takePhoto()
             }
@@ -220,7 +183,7 @@ struct ContentView: View {
                 LensRow(camera: camera, motion: motion, iconAngle: iconAngle, isShown: isIdle)
                 HStack {
                     Spacer()
-                    controlsButton
+                    optionsMenu
                 }
             }
             // Guiding leaves only the photo, the shot's name and the two buttons you need.
@@ -245,43 +208,13 @@ struct ContentView: View {
 
             RatioMask(crop: ratio.cropInViewfinder)
 
-            if showsGrid {
-                GridLines(crop: ratio.cropInViewfinder)
-            }
-
-            if motion.target != nil || showsLevel {
-                LiveGuide(
-                    motion: motion,
-                    showsLevel: showsLevel || motion.target != nil,
-                    isPaused: camera.capturedPhoto != nil || motion.guide.isAligned || sheet != nil
-                )
-                .transition(.opacity)
+            if motion.target != nil {
+                LiveGuide(motion: motion, isPaused: camera.capturedPhoto != nil || motion.guide.isAligned)
+                    .transition(.opacity)
             }
 
             if isScanning {
                 ScanBrackets(crop: ratio.cropInViewfinder)
-                    .transition(.opacity)
-            }
-
-            if let countdown {
-                Text("\(countdown)")
-                    .font(.system(size: 96, weight: .thin))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .shadow(color: Theme.keyline, radius: 2)
-                    .rotationEffect(.degrees(iconAngle))
-                    .allowsHitTesting(false)
-            }
-
-            if camera.isFocusLocked {
-                Text("AE/AF LOCK")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(.white)
-                    .shadow(color: Theme.keyline, radius: 1)
-                    .padding(.top, 12)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .allowsHitTesting(false)
                     .transition(.opacity)
             }
 
@@ -292,58 +225,21 @@ struct ContentView: View {
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
         .clipped()
+        .overlay(alignment: .topLeading) { flashIndicator }
     }
 
-    /// Flash, Night and shape, either side of the Dynamic Island, so nothing covers the photo.
-    private var topButtons: some View {
-        HStack(spacing: 0) {
-            if camera.hasFlash {
-                topButton(symbol: camera.flashMode.symbol, isOn: camera.flashMode != .off, label: "Flash, \(camera.flashMode.title)") {
-                    camera.cycleFlash()
-                }
-            }
-            Spacer()
-            topButton(
-                symbol: camera.isNightOn ? "moon.fill" : "moon",
-                // Lights up to suggest itself when the camera sees a dark scene.
-                isOn: camera.isNightOn || camera.isDarkScene,
-                label: "Night, \(camera.isNightOn ? "On" : "Off")"
-            ) {
-                camera.setNight(!camera.isNightOn)
-            }
-            Button {
-                withAnimation(Theme.quick) { ratio = ratio.next }
-            } label: {
-                Text(ratio.rawValue)
-                    .font(.footnote.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .fixedSize()
-                    .rotationEffect(.degrees(iconAngle))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .disabled(!isIdle)
-            .opacity(isIdle ? 1 : 0.35)
-            .accessibilityLabel("Aspect, \(ratio.rawValue)")
-        }
-        .padding(.horizontal, 16)
-        // Sits in the black band above the viewfinder, level with the Dynamic Island.
-        .padding(.top, 9)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .ignoresSafeArea(edges: .top)
-    }
-
-    private func topButton(symbol: String, isOn: Bool, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
+    @ViewBuilder
+    private var flashIndicator: some View {
+        if camera.flashMode != .off {
+            Image(systemName: camera.flashMode == .on ? "bolt.fill" : "bolt.badge.automatic.fill")
                 .font(.body.weight(.medium))
-                .foregroundStyle(isOn ? Color.accentColor : Color.white)
+                .foregroundStyle(.white)
+                .shadow(color: Theme.keyline, radius: 1)
                 .rotationEffect(.degrees(iconAngle))
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                .padding(16)
+                .accessibilityLabel(camera.flashMode == .on ? "Flash on" : "Flash auto")
+                .transition(.opacity)
         }
-        .accessibilityLabel(label)
     }
 
     @ViewBuilder
@@ -369,62 +265,23 @@ struct ContentView: View {
         GeometryReader { geometry in
             Color.clear
                 .contentShape(Rectangle())
-                .gesture(touchGesture(in: geometry.size))
+                .gesture(
+                    SpatialTapGesture().onEnded { value in
+                        setFocus(at: value.location, in: geometry.size)
+                    }
+                )
                 .simultaneousGesture(pinchGesture)
 
             if let focusPoint {
-                FocusMark(exposure: camera.tapExposure)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.white, lineWidth: 1.5)
+                    .frame(width: 64, height: 64)
+                    .shadow(color: Theme.keyline, radius: 1)
                     .position(focusPoint)
                     .transition(.opacity)
                     .allowsHitTesting(false)
             }
         }
-    }
-
-    /// Tap to focus, hold to lock, and drag up or down after focusing to change brightness.
-    private func touchGesture(in size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                var current = touch ?? beginTouch(at: value.startLocation, in: size)
-                let distance = hypot(value.translation.width, value.translation.height)
-                if distance > Self.touchSlop || pinchStartZoom != nil {
-                    current.hasMoved = true
-                    current.holdTask.cancel()
-                }
-                // Only a focus square already showing can be dragged, as on the iPhone camera.
-                if current.hasMoved, pinchStartZoom == nil, focusPoint != nil {
-                    focusMarkTask?.cancel()
-                    let change = Float(-value.translation.height / Self.exposureDragLength) * Self.exposureDragRange
-                    let range = Self.exposureDragRange
-                    camera.setTapExposure(min(max(current.startExposure + change, -range), range))
-                }
-                touch = current
-            }
-            .onEnded { value in
-                guard let ended = touch else { return }
-                ended.holdTask.cancel()
-                touch = nil
-                if ended.didLock {
-                    return
-                } else if !ended.hasMoved {
-                    setFocus(at: value.startLocation, in: size)
-                } else if focusPoint != nil {
-                    camera.finishExposureDrag()
-                    fadeFocusMark()
-                }
-            }
-    }
-
-    private func beginTouch(at location: CGPoint, in size: CGSize) -> ViewfinderTouch {
-        let hold = Task {
-            try? await Task.sleep(nanoseconds: Self.focusLockDelay)
-            guard !Task.isCancelled else { return }
-            touch?.didLock = true
-            focusMarkTask?.cancel()
-            camera.lockFocus(atX: location.x / size.width, y: location.y / size.height)
-            withAnimation(Theme.quick) { focusPoint = location }
-        }
-        return ViewfinderTouch(startExposure: camera.tapExposure, holdTask: hold)
     }
 
     private var pinchGesture: some Gesture {
@@ -437,9 +294,34 @@ struct ContentView: View {
             }
     }
 
-    private var controlsButton: some View {
-        Button {
-            sheet = .controls
+    private var optionsMenu: some View {
+        Menu {
+            if camera.hasFlash {
+                Picker(selection: flashBinding) {
+                    Text("Auto").tag(AVCaptureDevice.FlashMode.auto)
+                    Text("On").tag(AVCaptureDevice.FlashMode.on)
+                    Text("Off").tag(AVCaptureDevice.FlashMode.off)
+                } label: {
+                    Label("Flash", systemImage: "bolt")
+                }
+                .pickerStyle(.menu)
+            }
+
+            Picker(selection: $ratio) {
+                ForEach(CaptureRatio.allCases, id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            } label: {
+                Label("Aspect Ratio", systemImage: "aspectratio")
+            }
+            .pickerStyle(.menu)
+            .disabled(!isIdle)
+
+            Divider()
+
+            Button("Settings", systemImage: "gearshape") {
+                showingSettings = true
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.body.weight(.medium))
@@ -448,7 +330,16 @@ struct ContentView: View {
                 .frame(width: 52, height: 44)
                 .contentShape(Rectangle())
         }
-        .accessibilityLabel("Controls")
+        .accessibilityLabel("Options")
+    }
+
+    private var flashBinding: Binding<AVCaptureDevice.FlashMode> {
+        Binding(
+            get: { camera.flashMode },
+            set: { newValue in
+                withAnimation(Theme.quick) { camera.flashMode = newValue }
+            }
+        )
     }
 
     private var controls: some View {
@@ -510,21 +401,12 @@ struct ContentView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($shutterHeld) { _, held, _ in
-                    held = true
-                }
-                .onChanged { _ in
-                    if !shutterFired {
-                        shutterFired = true
+                    if !held {
                         takePhoto()
                     }
+                    held = true
                 }
         )
-        // Follows the gesture state, which also resets if the press is interrupted.
-        .onChange(of: shutterHeld) { _, held in
-            if !held {
-                shutterFired = false
-            }
-        }
         .accessibilityElement()
         .accessibilityLabel("Take photo")
         .accessibilityValue(motion.guide.isAligned ? "Lined up" : "")
@@ -613,43 +495,16 @@ struct ContentView: View {
     private func setFocus(at location: CGPoint, in size: CGSize) {
         camera.focus(atX: location.x / size.width, y: location.y / size.height)
         withAnimation(Theme.quick) { focusPoint = location }
-        fadeFocusMark()
-    }
-
-    private func fadeFocusMark() {
-        focusMarkTask?.cancel()
-        guard !camera.isFocusLocked else { return }
-        focusMarkTask = Task {
-            try? await Task.sleep(nanoseconds: Self.focusMarkDelay)
-            if !Task.isCancelled {
+        Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if focusPoint == location {
                 withAnimation(Theme.quick) { focusPoint = nil }
             }
         }
     }
 
-    /// Shoots now, or starts the timer. Pressing again during a countdown cancels it.
     private func takePhoto() {
-        if let running = countdownTask {
-            running.cancel()
-            countdownTask = nil
-            countdown = nil
-            return
-        }
-        guard timer > 0 else {
-            camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
-            return
-        }
-        let seconds = timer
-        countdownTask = Task {
-            for remaining in stride(from: seconds, to: 0, by: -1) {
-                countdown = remaining
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if Task.isCancelled { return }
-            }
-            countdown = nil
-            countdownTask = nil
-            camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
-        }
+        camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
     }
 
     private func blinkShutter() {
@@ -697,7 +552,7 @@ struct ContentView: View {
             return
         }
         guard let apiKey = KeyStore.load() else {
-            sheet = .settings
+            showingSettings = true
             return
         }
 
@@ -739,19 +594,6 @@ struct ContentView: View {
                 message = error.localizedDescription
             }
         }
-    }
-
-    private enum ActiveSheet: String, Identifiable {
-        case controls, settings
-        var id: String { rawValue }
-    }
-
-    /// One finger on the viewfinder, from touch down until it lifts.
-    private struct ViewfinderTouch {
-        let startExposure: Float
-        let holdTask: Task<Void, Never>
-        var hasMoved = false
-        var didLock = false
     }
 
     /// Anything that counts as using the camera restarts the keep-awake countdown.

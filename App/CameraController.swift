@@ -37,14 +37,6 @@ final class CameraController: NSObject {
     private(set) var isCapturing = false
     private(set) var shutterBlinks = 0
     private(set) var interruption: String?
-    private(set) var isNightOn = false
-    /// The camera reports a scene dark enough that flash or Night would help.
-    private(set) var isDarkScene = false
-    private(set) var isFocusLocked = false
-    /// Brightness set in the controls panel, which stays until changed.
-    private(set) var exposureCompensation: Float = 0
-    /// Brightness set by dragging after a tap, which goes when the scene changes.
-    private(set) var tapExposure: Float = 0
     var flashMode: AVCaptureDevice.FlashMode = .off
     var capturedPhoto: CapturedPhoto?
     var errorMessage: String?
@@ -66,7 +58,6 @@ final class CameraController: NSObject {
     @ObservationIgnored private var minimumFactor: Double = 1
     @ObservationIgnored private var maximumFactor: Double = 1
     @ObservationIgnored private var zoomObservation: NSKeyValueObservation?
-    @ObservationIgnored private var sceneObservation: NSKeyValueObservation?
     @ObservationIgnored private var pendingFrame: CheckedContinuation<ScanFrame, Error>?
     @ObservationIgnored private var onPendingFrame: (() -> Void)?
     @ObservationIgnored private var frameRequest = 0
@@ -79,9 +70,6 @@ final class CameraController: NSObject {
     private static let placeholderLongEdge: CGFloat = 1200
     private static let frameTimeout: TimeInterval = 3
     private static let maximumDisplayZoom: Double = 15
-    /// Night's limits: slow enough to gather light, short enough to hold by hand.
-    private static let nightExposureLimit = CMTime(value: 1, timescale: 4)
-    private static let nightBoost: Float = 0.5
 
     #if DEBUG
     /// Stands in for a real camera so tests can drive the app on a simulator, which has none.
@@ -181,7 +169,6 @@ final class CameraController: NSObject {
             session.commitConfiguration()
 
             observeSession(camera)
-            monitorDarkScenes()
 
             device = camera
             optics = Self.optics(for: camera)
@@ -220,19 +207,6 @@ final class CameraController: NSObject {
             let factor = Double(device.videoZoomFactor)
             self.onZoomFactorChange?(factor)
             DispatchQueue.main.async { self.zoomDisplay = factor / self.wideFactor }
-        }
-    }
-
-    private func monitorDarkScenes() {
-        let monitor = AVCapturePhotoSettings()
-        if photoOutput.supportedFlashModes.contains(.auto) {
-            monitor.flashMode = .auto
-        }
-        monitor.photoQualityPrioritization = .quality
-        photoOutput.photoSettingsForSceneMonitoring = monitor
-        sceneObservation = photoOutput.observe(\.isFlashScene, options: [.new]) { [weak self] output, _ in
-            let isDark = output.isFlashScene
-            DispatchQueue.main.async { self?.isDarkScene = isDark }
         }
     }
 
@@ -361,100 +335,12 @@ final class CameraController: NSObject {
 
     /// Focuses and meters once on a point given as fractions of the upright viewfinder.
     func focus(atX x: Double, y: Double) {
-        isFocusLocked = false
-        tapExposure = 0
-        applyBias()
         applyFocus(at: CGPoint(x: y, y: 1 - x), focus: .autoFocus, exposure: .autoExpose, watchSubject: true)
-    }
-
-    /// Holds focus and exposure at a point until the next tap.
-    func lockFocus(atX x: Double, y: Double) {
-        isFocusLocked = true
-        tapExposure = 0
-        applyBias()
-        applyFocus(at: CGPoint(x: y, y: 1 - x), focus: .autoFocus, exposure: .autoExpose, watchSubject: false)
     }
 
     /// When the scene changes after a tap, hand control back to the camera.
     @objc private func subjectAreaChanged() {
-        DispatchQueue.main.async {
-            self.tapExposure = 0
-            self.applyBias()
-        }
         applyFocus(at: CGPoint(x: 0.5, y: 0.5), focus: .continuousAutoFocus, exposure: .continuousAutoExposure, watchSubject: false)
-    }
-
-    func cycleFlash() {
-        switch flashMode {
-        case .off: flashMode = .auto
-        case .auto: flashMode = .on
-        default: flashMode = .off
-        }
-        if flashMode != .off, isNightOn {
-            setNight(false)
-        }
-    }
-
-    func setExposureCompensation(_ value: Float) {
-        exposureCompensation = value
-        applyBias()
-    }
-
-    /// Follows a drag on the viewfinder. Scene watching pauses so the change doesn't undo itself.
-    func setTapExposure(_ value: Float) {
-        tapExposure = value
-        applyBias()
-        setSubjectWatching(false)
-    }
-
-    func finishExposureDrag() {
-        setSubjectWatching(!isFocusLocked)
-    }
-
-    private func setSubjectWatching(_ watching: Bool) {
-        sessionQueue.async { [self] in
-            guard let camera = device, (try? camera.lockForConfiguration()) != nil else { return }
-            camera.isSubjectAreaChangeMonitoringEnabled = watching
-            camera.unlockForConfiguration()
-        }
-    }
-
-    private func applyBias() {
-        let total = exposureCompensation + tapExposure + (isNightOn ? Self.nightBoost : 0)
-        sessionQueue.async { [self] in
-            guard let camera = device, (try? camera.lockForConfiguration()) != nil else { return }
-            let bias = min(max(total, camera.minExposureTargetBias), camera.maxExposureTargetBias)
-            camera.setExposureTargetBias(bias, completionHandler: nil)
-            camera.unlockForConfiguration()
-        }
-    }
-
-    /// Apple keeps its real Night mode to itself, so this allows slower exposures and a little more
-    /// brightness, on top of the low-light fusion the camera does for quality-first photos.
-    func setNight(_ on: Bool) {
-        isNightOn = on
-        if on {
-            flashMode = .off
-        }
-        applyBias()
-        sessionQueue.async { [self] in
-            guard let camera = device, (try? camera.lockForConfiguration()) != nil else { return }
-            if on {
-                let format = camera.activeFormat
-                let limit = CMTimeMinimum(Self.nightExposureLimit, format.maxExposureDuration)
-                camera.activeMaxExposureDuration = limit
-                if !camera.isAutoVideoFrameRateEnabled,
-                   let slowest = format.videoSupportedFrameRateRanges.map(\.maxFrameDuration).max() {
-                    camera.activeVideoMaxFrameDuration = CMTimeMinimum(limit, slowest)
-                }
-            } else {
-                camera.activeMaxExposureDuration = .invalid
-                if !camera.isAutoVideoFrameRateEnabled {
-                    camera.activeVideoMaxFrameDuration = .invalid
-                }
-            }
-            camera.unlockForConfiguration()
-        }
     }
 
     private func applyFocus(at point: CGPoint, focus: AVCaptureDevice.FocusMode, exposure: AVCaptureDevice.ExposureMode, watchSubject: Bool) {
