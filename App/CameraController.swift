@@ -12,7 +12,7 @@ struct CameraOptics {
 
 /// A photo on its way to being developed. The screen opens on `placeholder` while `data` is processed.
 @Observable
-final class CapturedPhoto: Identifiable {
+final class CapturedPhoto {
     let id = UUID()
     let placeholder: UIImage?
     fileprivate(set) var data: Data?
@@ -51,7 +51,8 @@ final class CameraController: NSObject {
     private let videoQueue = DispatchQueue(label: "shotfinder.camera.video")
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
-    private let imageContext = CIContext()
+    /// Each video frame is different, so nothing is worth caching between them.
+    private static let imageContext = CIContext(options: [.cacheIntermediates: false])
     @ObservationIgnored private var device: AVCaptureDevice?
     @ObservationIgnored private var wideFactor: Double = 1
     @ObservationIgnored private var minimumFactor: Double = 1
@@ -71,17 +72,15 @@ final class CameraController: NSObject {
     private static let maximumDisplayZoom: Double = 15
 
     #if DEBUG
-    /// Stands in for a real camera so tests can capture the screen on a simulator, which has none.
-    func stageForScreenshots(lenses: [Double], backdrop: UIImage?) {
+    /// Stands in for a real camera so tests can drive the app on a simulator, which has none.
+    func stageForTesting(lenses: [Double], backdrop: UIImage?) {
         isStaged = true
         self.lenses = lenses
         stagedBackdrop = backdrop
         hasFlash = true
         isPreviewLive = true
         wideFactor = 2
-        minimumFactor = 1
         maximumFactor = 30
-        stagedFactor = 2
         optics = CameraOptics(tanHorizontal: 0.75, tanVertical: 1)
         status = .ready
     }
@@ -158,9 +157,12 @@ final class CameraController: NSObject {
             photoOutput.maxPhotoQualityPrioritization = .quality
 
             videoOutput.alwaysDiscardsLateVideoFrames = true
-            videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
             videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
             session.addOutput(videoOutput)
+            // A lighter format than BGRA, since these frames are rarely used.
+            let lightFormat = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+            videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String:
+                videoOutput.availableVideoPixelFormatTypes.contains(lightFormat) ? lightFormat : kCVPixelFormatType_32BGRA]
             if let connection = videoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
             }
@@ -183,7 +185,6 @@ final class CameraController: NSObject {
 
             DispatchQueue.main.async {
                 self.lenses = available
-                self.zoomDisplay = 1
                 self.hasFlash = flash
                 self.status = .ready
             }
@@ -241,7 +242,7 @@ final class CameraController: NSObject {
         DispatchQueue.main.async { self.interruption = nil }
     }
 
-    /// Pauses the camera after a long stay on the develop screen, to save heat and battery.
+    /// Pauses the camera during a long stay on the develop screen, and resumes it afterwards.
     func setRunning(_ running: Bool) {
         sessionQueue.async { [self] in
             guard device != nil else { return }
@@ -420,7 +421,6 @@ final class CameraController: NSObject {
             if connection.isVideoRotationAngleSupported(rotationAngle) {
                 connection.videoRotationAngle = rotationAngle
             }
-            processedData = nil
             captureIsUpright = rotationAngle == 90
             let settings = makeSettings()
             if photoOutput.supportedFlashModes.contains(flash) {
@@ -464,7 +464,15 @@ final class CameraController: NSObject {
         let image = CIImage(cvPixelBuffer: pixels)
         let scale = min(1, Self.placeholderLongEdge / max(image.extent.width, image.extent.height))
         let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        guard let rendered = imageContext.createCGImage(scaled, from: scaled.extent.integral) else { return }
+        // Rendered right away, so no camera buffer stays held by the image.
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let rendered = Self.imageContext.createCGImage(
+                scaled,
+                from: scaled.extent.integral,
+                format: .RGBA8,
+                colorSpace: colorSpace,
+                deferred: false
+              ) else { return }
         let placeholder = UIImage(cgImage: rendered)
         DispatchQueue.main.async {
             if self.isCapturing, self.capturedPhoto == nil {
@@ -501,7 +509,7 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
             y: height / image.extent.height
         ))
         let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.8]
-        if let jpeg = imageContext.jpegRepresentation(of: scaled, colorSpace: colorSpace, options: options) {
+        if let jpeg = Self.imageContext.jpegRepresentation(of: scaled, colorSpace: colorSpace, options: options) {
             continuation.resume(returning: ScanFrame(jpeg: jpeg, width: Int(width), height: Int(height), zoomFactor: zoomFactor))
         } else {
             continuation.resume(throwing: ScanError.badResponse)

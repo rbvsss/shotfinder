@@ -28,13 +28,12 @@ struct DevelopView: View {
         VStack(spacing: 14) {
             photoArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+                // Without a frame, the photo sits exactly where the viewfinder was.
+                .padding(.horizontal, settings.frame == .none ? 0 : 16)
 
             if let message {
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
             }
@@ -42,12 +41,12 @@ struct DevelopView: View {
             lookPicker
 
             HStack(spacing: 10) {
-                optionButton(settings.grain.title) {
+                optionButton(settings.grain.title, isOn: settings.grain != .off) {
                     settings.grain = settings.grain.next
                 }
                 .accessibilityLabel("Grain, \(settings.grain.title)")
 
-                optionButton(settings.frame.title) {
+                optionButton(settings.frame.title, isOn: settings.frame != .none) {
                     settings.frame = settings.frame.next
                 }
                 .accessibilityLabel("Frame, \(settings.frame.title)")
@@ -144,14 +143,13 @@ struct DevelopView: View {
         }
     }
 
-    private func optionButton(_ title: String, action: @escaping () -> Void) -> some View {
+    private func optionButton(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(isOn ? .primary : .secondary)
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(Theme.control, in: Capsule())
-                .contentShape(Capsule())
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
     }
@@ -182,7 +180,7 @@ struct DevelopView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.white)
-            .disabled(isSaving || developer == nil)
+            .disabled(developer == nil)
         }
         .controlSize(.large)
         .buttonBorderShape(.capsule)
@@ -221,8 +219,7 @@ struct DevelopView: View {
         case .success(let ready):
             developer = ready
             requestRender()
-            let rendered = await Task.detached(priority: .utility) { ready.renderThumbnails() }.value
-            thumbnails = rendered
+            thumbnails = await Task.detached(priority: .utility) { ready.renderThumbnails() }.value
         case .failure(let error):
             message = error.localizedDescription
         }

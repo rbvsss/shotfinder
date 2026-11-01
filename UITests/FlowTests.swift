@@ -8,10 +8,10 @@ final class FlowTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch(scan: String = "centered", hasKey: Bool = true) throws {
+    private func launch(scan: String = "centered", hasKey: Bool = true, arguments: [String] = []) throws {
         let photo = try XCTUnwrap(Bundle(for: Self.self).path(forResource: "sample", ofType: "jpg"))
         app = XCUIApplication()
-        app.launchArguments = ["-staged"] + (hasKey ? ["-stagedKey"] : [])
+        app.launchArguments = (hasKey ? ["-stagedKey"] : []) + arguments
         app.launchEnvironment = ["STAGED_PHOTO": photo, "STAGED_SCAN": scan]
         app.launch()
         XCTAssertTrue(app.buttons["Take photo"].waitForExistence(timeout: 10))
@@ -33,6 +33,54 @@ final class FlowTests: XCTestCase {
         if alert.waitForExistence(timeout: 3) {
             let allow = alert.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Allow' AND NOT label CONTAINS[c] 'Don'")).firstMatch
             if allow.exists { allow.tap() }
+        }
+    }
+
+    /// Runs Apple's accessibility audit on each screen. Findings are written out to be read, not to fail
+    /// the build, because the audit can't judge text drawn over a live camera picture.
+    func testAccessibilityAudit() throws {
+        try launch()
+        var findings: [String] = []
+        func audit(_ screen: String) throws {
+            try app.performAccessibilityAudit { issue in
+                findings.append("\(screen): \(issue.compactDescription) | \(issue.detailedDescription) | \(issue.element?.label ?? "no element")")
+                return true
+            }
+        }
+
+        try audit("camera")
+        app.buttons["Scan for a shot"].tap()
+        XCTAssertTrue(app.buttons["Scan again"].waitForExistence(timeout: 8))
+        try audit("lined up")
+        app.buttons["Take photo"].tap()
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 5))
+        sleep(3)
+        try audit("develop")
+
+        let directory = URL(fileURLWithPath: "/tmp/shotfinder-screens")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try findings.joined(separator: "\n").write(to: directory.appendingPathComponent("accessibility.txt"), atomically: true, encoding: .utf8)
+    }
+
+    func testLargeTextLayouts() throws {
+        try launch(scan: "off-center", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        app.buttons["Scan for a shot"].tap()
+        XCTAssertTrue(app.buttons["Stop guiding"].waitForExistence(timeout: 8))
+        sleep(1)
+        shoot("large-text-guiding")
+        app.buttons["Take photo"].tap()
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 5))
+        sleep(3)
+        shoot("large-text-develop")
+    }
+
+    func testLaunchTime() throws {
+        let photo = try XCTUnwrap(Bundle(for: Self.self).path(forResource: "sample", ofType: "jpg"))
+        measure(metrics: [XCTApplicationLaunchMetric()]) {
+            let app = XCUIApplication()
+            app.launchEnvironment = ["STAGED_PHOTO": photo]
+            app.launch()
+            app.terminate()
         }
     }
 
@@ -75,7 +123,7 @@ final class FlowTests: XCTestCase {
         app.buttons["Take photo"].tap()
         let save = app.buttons["Save"]
         XCTAssertTrue(save.waitForExistence(timeout: 5))
-        XCTAssertTrue(NSPredicate(format: "isEnabled == true").evaluate(with: save) || waitForEnabled(save))
+        XCTAssertTrue(waitForEnabled(save))
         sleep(2)
         shoot("e2e-12-develop-look")
 

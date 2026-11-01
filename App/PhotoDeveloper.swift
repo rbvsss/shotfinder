@@ -65,10 +65,6 @@ enum PhotoFrame: String {
         }
     }
 
-    private var color: CIColor {
-        CIColor(red: 0.96, green: 0.95, blue: 0.92)
-    }
-
     /// Margins as fractions of the photo's short edge: sides, top, bottom.
     private var margins: (side: CGFloat, top: CGFloat, bottom: CGFloat) {
         switch self {
@@ -94,7 +90,8 @@ enum PhotoFrame: String {
             translationX: side - image.extent.minX,
             y: bottom - image.extent.minY
         ))
-        return moved.composited(over: CIImage(color: color).cropped(to: canvas))
+        let paper = CIColor(red: 0.96, green: 0.95, blue: 0.92)
+        return moved.composited(over: CIImage(color: paper).cropped(to: canvas))
     }
 }
 
@@ -169,9 +166,7 @@ final class PhotoDeveloper {
         guard let cgImage = placeholder.cgImage else { return nil }
         var fast = settings
         fast.grain = .off
-        let output = develop(crop(CIImage(cgImage: cgImage), to: ratio), fast)
-        guard let rendered = context.createCGImage(output, from: output.extent) else { return nil }
-        return UIImage(cgImage: rendered)
+        return image(from: develop(crop(CIImage(cgImage: cgImage), to: ratio), fast))
     }
 
     init(data: Data, ratio: CaptureRatio) throws {
@@ -198,26 +193,26 @@ final class PhotoDeveloper {
     }
 
     func renderPreview(_ settings: DevelopSettings) -> UIImage? {
-        image(from: Self.develop(preview, settings))
+        Self.image(from: Self.develop(preview, settings))
     }
 
     func renderThumbnails() -> [Look: UIImage] {
         var result: [Look: UIImage] = [:]
         for look in Look.allCases {
-            result[look] = image(from: look.apply(to: thumbnail))
+            result[look] = Self.image(from: look.apply(to: thumbnail))
         }
         return result
     }
 
-    private func image(from output: CIImage) -> UIImage? {
-        guard let rendered = Self.context.createCGImage(output, from: output.extent) else { return nil }
+    private static func image(from output: CIImage) -> UIImage? {
+        guard let rendered = context.createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: rendered)
     }
 
     #if DEBUG
     /// Renders at full size, so tests can compare the saved photo with the preview.
     func renderFullSize(_ settings: DevelopSettings) -> UIImage? {
-        image(from: Self.develop(source, settings))
+        Self.image(from: Self.develop(source, settings))
     }
     #endif
 

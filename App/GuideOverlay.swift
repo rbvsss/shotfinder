@@ -31,8 +31,13 @@ struct GuideOverlay: View {
                 if let projection {
                     if projection.isInView {
                         if !projection.isZoomed || !projection.isCentered {
-                            CornerMarks(arm: 18)
-                                .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                            // A dark outline drawn under the white, cheaper to redraw every frame than a shadow.
+                            ZStack {
+                                CornerMarks(arm: 18)
+                                    .stroke(Theme.keyline, style: StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
+                                CornerMarks(arm: 18)
+                                    .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                            }
                                 .frame(width: projection.width * size.width, height: projection.height * size.height)
                                 .position(x: projection.x * size.width, y: projection.y * size.height)
                         }
@@ -42,10 +47,9 @@ struct GuideOverlay: View {
                 }
 
                 levelLine(width: size.width * 0.2)
+                    .shadow(color: Theme.keyline, radius: 1)
                     .position(x: size.width / 2, y: size.height / 2)
             }
-            .compositingGroup()
-            .shadow(color: Theme.keyline, radius: 1)
             .opacity(isAligned ? 0 : 1)
             .animation(.easeOut(duration: 0.12), value: isAligned)
         }
@@ -63,6 +67,7 @@ struct GuideOverlay: View {
         return Image(systemName: "chevron.up")
             .font(.title2.weight(.semibold))
             .foregroundStyle(.white)
+            .shadow(color: Theme.keyline, radius: 1)
             .rotationEffect(.radians(atan2(dx, -dy)))
             .position(x: size.width / 2 + dx * scale, y: size.height / 2 + dy * scale)
     }

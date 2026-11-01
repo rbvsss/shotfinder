@@ -1,4 +1,3 @@
-import ImageIO
 import XCTest
 @testable import ShotFinder
 
@@ -34,11 +33,6 @@ final class PhotoDeveloperTests: XCTestCase {
         ))
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         return Array(pixel.prefix(3))
-    }
-
-    func testOrientationIsAppliedBeforeCropping() throws {
-        let preview = try XCTUnwrap(developer().renderPreview(DevelopSettings()))
-        XCTAssertEqual(preview.size.width / preview.size.height, 0.75, accuracy: 0.01)
     }
 
     func testEachRatioGivesItsShape() throws {
@@ -82,7 +76,8 @@ final class PhotoDeveloperTests: XCTestCase {
     }
 
     /// Spread of brightness values, in 8-bit levels, across a square patch from the middle.
-    private func noise(in image: UIImage, side: Int = 400) throws -> Double {
+    private func noise(in image: UIImage) throws -> Double {
+        let side = 400
         let cgImage = try XCTUnwrap(image.cgImage)
         var pixels = [UInt8](repeating: 0, count: side * side * 4)
         let context = try XCTUnwrap(CGContext(

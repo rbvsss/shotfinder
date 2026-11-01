@@ -1,7 +1,6 @@
 import AVFoundation
 import AVKit
 import SwiftUI
-import UIKit
 
 struct ContentView: View {
     let camera: CameraController
@@ -11,6 +10,8 @@ struct ContentView: View {
     private static let lensSettleDelay: UInt64 = 300_000_000
     /// How long the camera keeps running behind the develop screen before it pauses.
     private static let developIdleLimit: UInt64 = 30_000_000_000
+    /// How long the screen stays awake with nothing happening, so a forgotten phone can sleep.
+    private static let keepAwakeLimit: UInt64 = 120_000_000_000
     /// How long a scan can run before saying so.
     private static let slowScanDelay: UInt64 = 8_000_000_000
 
@@ -54,11 +55,11 @@ struct ContentView: View {
                     onSaved: { thumbnail in
                         withAnimation(.snappy(duration: 0.25)) { lastPhoto = thumbnail }
                         saves += 1
-                        leaveDevelop()
+                        camera.closePhoto()
                         // The shot is taken, so the guide has done its job.
                         stopGuiding()
                     },
-                    onDiscard: leaveDevelop
+                    onDiscard: camera.closePhoto
                 )
                 .id(photo.id)
                 .transition(.opacity)
@@ -76,7 +77,7 @@ struct ContentView: View {
                 camera.errorMessage = nil
             }
         }
-        .task(id: MessageTimer(message: message, isHidden: camera.capturedPhoto != nil)) {
+        .task(id: camera.capturedPhoto == nil ? message : nil) {
             // Messages fade after a moment, but wait until the camera screen is showing again.
             guard message != nil, camera.capturedPhoto == nil else { return }
             try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -90,6 +91,21 @@ struct ContentView: View {
             try? await Task.sleep(nanoseconds: Self.slowScanDelay)
             if !Task.isCancelled {
                 scanIsSlow = true
+            }
+        }
+        .task(id: AwakeKey(
+            isActive: scenePhase == .active,
+            isIdle: isIdle,
+            shots: camera.shutterBlinks,
+            turns: motion.quarterTurns,
+            photo: camera.capturedPhoto?.id,
+            guide: motion.guide
+        )) {
+            UIApplication.shared.isIdleTimerDisabled = scenePhase == .active
+            guard scenePhase == .active else { return }
+            try? await Task.sleep(nanoseconds: Self.keepAwakeLimit)
+            if !Task.isCancelled {
+                UIApplication.shared.isIdleTimerDisabled = false
             }
         }
         .onAppear(perform: appear)
@@ -127,7 +143,6 @@ struct ContentView: View {
 
     private func notice(_ text: String) -> some View {
         Text(text)
-            .font(.body)
             .multilineTextAlignment(.center)
             .foregroundStyle(.secondary)
             .padding(32)
@@ -157,7 +172,8 @@ struct ContentView: View {
                 message: message ?? camera.interruption,
                 showsFirstHint: !hasScanned
             )
-            .frame(minHeight: 64)
+            .frame(minHeight: 64, alignment: .top)
+            .padding(.top, 14)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 0)
@@ -165,15 +181,14 @@ struct ContentView: View {
             // Everything you touch sits here, within reach of your thumb.
             ZStack {
                 LensRow(camera: camera, motion: motion, iconAngle: iconAngle, isShown: isIdle)
-                    .opacity(isIdle && !camera.lenses.isEmpty ? 1 : 0)
-                    .allowsHitTesting(isIdle)
-                    .animation(Theme.quick, value: isIdle)
-
                 HStack {
                     Spacer()
                     optionsMenu
                 }
             }
+            // Guiding leaves only the photo, the shot's name and the two buttons you need.
+            .opacity(isIdle ? 1 : 0)
+            .allowsHitTesting(isIdle)
             .padding(.horizontal, 32)
             .padding(.bottom, 8)
 
@@ -194,7 +209,7 @@ struct ContentView: View {
             RatioMask(crop: ratio.cropInViewfinder)
 
             if motion.target != nil {
-                LiveGuide(motion: motion, isPaused: camera.capturedPhoto != nil)
+                LiveGuide(motion: motion, isPaused: camera.capturedPhoto != nil || motion.guide.isAligned)
                     .transition(.opacity)
             }
 
@@ -231,9 +246,13 @@ struct ContentView: View {
     private var preview: some View {
         #if DEBUG
         if let backdrop = camera.stagedBackdrop {
-            Image(uiImage: backdrop)
-                .resizable()
-                .scaledToFill()
+            Color.clear
+                .overlay {
+                    Image(uiImage: backdrop)
+                        .resizable()
+                        .scaledToFill()
+                }
+                .clipped()
         } else {
             CameraPreview(session: camera.session, isLive: camera.isPreviewLive)
         }
@@ -305,7 +324,7 @@ struct ContentView: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.title3.weight(.medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(.white)
                 .rotationEffect(.degrees(iconAngle))
                 .frame(width: 52, height: 44)
@@ -368,6 +387,7 @@ struct ContentView: View {
         ZStack {
             Circle()
                 .stroke(motion.guide.isAligned ? Color.accentColor : Color.white, lineWidth: 3)
+                .animation(.easeOut(duration: 0.12), value: motion.guide.isAligned)
                 .frame(width: 76, height: 76)
             Circle()
                 .fill(Color.white)
@@ -428,7 +448,6 @@ struct ContentView: View {
         }
         camera.start()
         motion.start()
-        UIApplication.shared.isIdleTimerDisabled = true
     }
 
     private func handle(_ phase: ScenePhase) {
@@ -445,7 +464,6 @@ struct ContentView: View {
         default:
             break
         }
-        UIApplication.shared.isIdleTimerDisabled = phase == .active
     }
 
     /// Stays running briefly so returning to the camera is instant, then pauses to save heat.
@@ -461,11 +479,6 @@ struct ContentView: View {
                 camera.setRunning(false)
             }
         }
-    }
-
-    private func leaveDevelop() {
-        camera.setRunning(true)
-        camera.closePhoto()
     }
 
     private func rotateIcons(toQuarterTurns turns: Int) {
@@ -554,8 +567,7 @@ struct ContentView: View {
         scanTask = Task {
             do {
                 try await Task.sleep(nanoseconds: Self.lensSettleDelay)
-                let tracker = motion
-                let frame = try await camera.captureScanFrame { tracker.mark() }
+                let frame = try await camera.captureScanFrame { [motion] in motion.mark() }
                 let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, apiKey: apiKey)
                 try Task.checkCancellation()
                 guard let optics = camera.optics else { throw ScanError.badResponse }
@@ -584,9 +596,14 @@ struct ContentView: View {
         }
     }
 
-    private struct MessageTimer: Equatable {
-        let message: String?
-        let isHidden: Bool
+    /// Anything that counts as using the camera restarts the keep-awake countdown.
+    private struct AwakeKey: Equatable {
+        let isActive: Bool
+        let isIdle: Bool
+        let shots: Int
+        let turns: Int
+        let photo: UUID?
+        let guide: GuideState
     }
 }
 
@@ -603,7 +620,6 @@ private struct HintView: View {
             if let message {
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(.primary)
             } else if isScanning {
                 if scanIsSlow {
                     Text("Still looking")
@@ -613,7 +629,6 @@ private struct HintView: View {
             } else if let target = motion.target {
                 Text(target.displayLabel)
                     .font(.headline)
-                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)
                     .font(.subheadline)
@@ -627,6 +642,8 @@ private struct HintView: View {
         .multilineTextAlignment(.center)
         .lineLimit(2)
         .frame(maxWidth: .infinity)
+        .animation(Theme.quick, value: message)
+        .animation(Theme.quick, value: scanIsSlow)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 }
@@ -649,7 +666,7 @@ private struct LensRow: View {
                     camera.zoom(to: lens)
                 } label: {
                     Text(label(isActive ? camera.zoomDisplay : lens))
-                        .font(.footnote.weight(isActive ? .semibold : .regular))
+                        .font(.subheadline.weight(isActive ? .semibold : .regular))
                         .monospacedDigit()
                         .foregroundStyle(isActive ? .primary : .secondary)
                         .rotationEffect(.degrees(iconAngle))

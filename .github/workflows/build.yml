@@ -17,19 +17,16 @@ jobs:
       - name: Run tests on a simulator
         run: |
           device=$(xcrun simctl list devices available | grep -m1 -E 'iPhone [0-9]+ Pro \(' | sed -E 's/^ *(.*) \(([0-9A-F-]+)\).*/\2/')
-          mkdir -p /tmp/shotfinder-screens
           xcodebuild test \
             -project ShotFinder.xcodeproj \
             -scheme ShotFinder \
             -destination "id=$device" \
-            -derivedDataPath build-tests \
             CODE_SIGNING_ALLOWED=NO
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ShotFinder-screens
           path: /tmp/shotfinder-screens
-          if-no-files-found: warn
       - name: Build unsigned app
         run: |
           xcodebuild \

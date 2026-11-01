@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 @main
 struct ShotFinderApp: App {
@@ -8,9 +7,9 @@ struct ShotFinderApp: App {
 
     init() {
         #if DEBUG
-        if Staging.isActive, let path = Staging.photoPath {
+        if let path = Staging.photoPath {
             URLProtocol.registerClass(FakeClaude.self)
-            camera.stageForScreenshots(lenses: [0.5, 1, 2, 4, 8], backdrop: UIImage(contentsOfFile: path))
+            camera.stageForTesting(lenses: [0.5, 1, 2, 4, 8], backdrop: UIImage(contentsOfFile: path))
         }
         #endif
     }
@@ -18,7 +17,6 @@ struct ShotFinderApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(camera: camera, motion: motion)
-                .preferredColorScheme(.dark)
         }
     }
 }

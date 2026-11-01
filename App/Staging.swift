@@ -4,10 +4,6 @@ import Foundation
 /// Lets the UI tests drive the whole app on a simulator, which has no camera, using a fake Claude.
 /// None of this exists in the build that goes on the phone.
 enum Staging {
-    static var isActive: Bool {
-        ProcessInfo.processInfo.arguments.contains("-staged")
-    }
-
     static var hasKey: Bool {
         ProcessInfo.processInfo.arguments.contains("-stagedKey")
     }

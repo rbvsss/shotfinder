@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var apiKey = KeyStore.load() ?? ""
+    @State private var savedKey = KeyStore.load() ?? ""
     @State private var message: String?
 
     var body: some View {
@@ -35,10 +36,9 @@ struct SettingsView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .presentationDetents([.height(260)])
         // A swipe away shouldn't lose a key you just pasted. Done saves it.
-        .interactiveDismissDisabled(apiKey != (KeyStore.load() ?? ""))
+        .interactiveDismissDisabled(apiKey != savedKey)
     }
 
     private var footer: String {

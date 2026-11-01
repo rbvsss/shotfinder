@@ -1,6 +1,5 @@
 name: ShotFinder
 options:
-  bundleIdPrefix: com.vault
   deploymentTarget:
     iOS: "26.0"
 targets:
@@ -18,8 +17,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.vault.shotfinder
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     info:
@@ -37,8 +34,7 @@ targets:
     platform: iOS
     sources:
       - UITests
-      - path: Tests/sample.jpg
-        buildPhase: resources
+      - Tests/sample.jpg
     dependencies:
       - target: ShotFinder
     settings:
@@ -46,7 +42,6 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         PRODUCT_BUNDLE_IDENTIFIER: com.vault.shotfinder.uitests
         SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
   ShotFinderTests:
     type: bundle.unit-test
     platform: iOS
@@ -59,4 +54,3 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         PRODUCT_BUNDLE_IDENTIFIER: com.vault.shotfinder.tests
         SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
