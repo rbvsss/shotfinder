@@ -17,7 +17,6 @@ struct ShotFinderApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(camera: camera, motion: motion)
-                .tint(Theme.accent)
         }
     }
 }

@@ -4,8 +4,8 @@ import ImageIO
 import Photos
 import UIKit
 
-enum Look: String, CaseIterable, Identifiable, Codable {
-    case natural, honey, noon, mist, reef, lantern, attic, riot, soot
+enum Look: String, CaseIterable, Identifiable {
+    case natural, kiln, fjord, cinder, salt, graphite
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
@@ -46,30 +46,32 @@ enum Look: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum PhotoFrame: String, CaseIterable, Codable {
-    case none, print, white, paper
+enum PhotoFrame: String {
+    case none, border, mat
 
     var title: String {
-        self == .none ? "No Frame" : rawValue.capitalized
+        switch self {
+        case .none: return "No Frame"
+        case .border: return "Border"
+        case .mat: return "Mat"
+        }
     }
 
     var next: PhotoFrame {
-        let all = Self.allCases
-        return all[((all.firstIndex(of: self) ?? 0) + 1) % all.count]
+        switch self {
+        case .none: return .border
+        case .border: return .mat
+        case .mat: return .none
+        }
     }
 
     /// Margins as fractions of the photo's short edge: sides, top, bottom.
     private var margins: (side: CGFloat, top: CGFloat, bottom: CGFloat) {
         switch self {
         case .none: return (0, 0, 0)
-        case .print: return (0.016, 0.016, 0.016)
-        case .white: return (0.06, 0.06, 0.06)
-        case .paper: return (0.06, 0.06, 0.18)
+        case .border: return (0.025, 0.025, 0.025)
+        case .mat: return (0.06, 0.06, 0.18)
         }
-    }
-
-    private var sheetColor: CIColor {
-        self == .paper ? CIColor(red: 0.96, green: 0.95, blue: 0.92) : .white
     }
 
     func apply(to image: CIImage) -> CIImage {
@@ -88,78 +90,12 @@ enum PhotoFrame: String, CaseIterable, Codable {
             translationX: side - image.extent.minX,
             y: bottom - image.extent.minY
         ))
-        let sheet = CIImage(color: sheetColor).cropped(to: canvas)
-        return (self == .print ? roughEdges(of: moved) : moved).composited(over: sheet)
-    }
-
-    /// Nibbles the photo's edges like a hand-printed sheet. The same on every render, so the preview matches the file.
-    private func roughEdges(of image: CIImage) -> CIImage {
-        let longEdge = max(image.extent.width, image.extent.height)
-        let scale = min(1, 2000 / longEdge)
-        let width = (image.extent.width * scale).rounded()
-        let height = (image.extent.height * scale).rounded()
-        guard let context = CGContext(
-            data: nil,
-            width: Int(width),
-            height: Int(height),
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return image }
-
-        let short = min(width, height)
-        let depth = short * 0.009
-        let step = short / 500
-        func nibble(_ position: CGFloat, side: CGFloat) -> CGFloat {
-            depth * Self.roughness(at: position / short, seed: side)
-        }
-
-        var points: [CGPoint] = []
-        for x in stride(from: 0, to: width, by: step) {
-            points.append(CGPoint(x: x, y: nibble(x, side: 1)))
-        }
-        for y in stride(from: 0, to: height, by: step) {
-            points.append(CGPoint(x: width - nibble(y, side: 2), y: y))
-        }
-        for x in stride(from: width, to: 0, by: -step) {
-            points.append(CGPoint(x: x, y: height - nibble(x, side: 3)))
-        }
-        for y in stride(from: height, to: 0, by: -step) {
-            points.append(CGPoint(x: nibble(y, side: 4), y: y))
-        }
-        context.setFillColor(gray: 1, alpha: 1)
-        context.addLines(between: points)
-        context.closePath()
-        context.fillPath()
-
-        guard let drawn = context.makeImage() else { return image }
-        let mask = CIImage(cgImage: drawn).transformed(by: CGAffineTransform(
-            scaleX: image.extent.width / width,
-            y: image.extent.height / height
-        ).concatenating(CGAffineTransform(translationX: image.extent.minX, y: image.extent.minY)))
-        return image.applyingFilter("CIBlendWithMask", parameters: [
-            kCIInputBackgroundImageKey: CIImage(color: .clear).cropped(to: image.extent),
-            kCIInputMaskImageKey: mask
-        ])
-    }
-
-    /// Bumps from 0 to 1 at three sizes, so an edge wanders slowly and has fine tears.
-    private static func roughness(at position: CGFloat, seed: CGFloat) -> CGFloat {
-        func noise(cells: CGFloat) -> CGFloat {
-            func random(_ cell: CGFloat) -> CGFloat {
-                let value = sin(cell * 12.9898 + seed * 78.233 + cells) * 43758.5453
-                return value - value.rounded(.down)
-            }
-            let cell = (position * cells).rounded(.down)
-            let along = position * cells - cell
-            return random(cell) * (1 - along) + random(cell + 1) * along
-        }
-        return noise(cells: 9) * 0.5 + noise(cells: 40) * 0.3 + noise(cells: 160) * 0.2
+        let paper = CIColor(red: 0.96, green: 0.95, blue: 0.92)
+        return moved.composited(over: CIImage(color: paper).cropped(to: canvas))
     }
 }
 
-enum GrainLevel: String, Codable {
+enum GrainLevel: String {
     case off, fine, heavy
 
     var title: String {
@@ -187,17 +123,10 @@ enum GrainLevel: String, Codable {
     }
 }
 
-struct DevelopSettings: Equatable, Codable {
+struct DevelopSettings: Equatable {
     var look: Look = .natural
     var grain: GrainLevel = .off
     var frame: PhotoFrame = .none
-
-    /// What carries over to the next photo. A frame is a choice for one photo, so it starts off.
-    var style: DevelopSettings {
-        var kept = self
-        kept.frame = .none
-        return kept
-    }
 }
 
 enum DevelopError: LocalizedError {
@@ -313,7 +242,8 @@ final class PhotoDeveloper {
 
     private static func develop(_ image: CIImage, _ settings: DevelopSettings) -> CIImage {
         let toned = settings.look.apply(to: image)
-        return settings.frame.apply(to: addGrain(to: toned, amount: settings.grain.amount))
+        let grained = addGrain(to: toned, amount: settings.grain.amount)
+        return settings.frame.apply(to: grained)
     }
 
     private static func addGrain(to image: CIImage, amount: Double) -> CIImage {

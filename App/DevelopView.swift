@@ -4,12 +4,12 @@ import SwiftUI
 struct DevelopView: View {
     let photo: CapturedPhoto
     let ratio: CaptureRatio
-    /// The look Claude picked for the shot this photo was guided to.
-    let suggestedLook: Look?
     let onSaved: (_ thumbnail: UIImage?) -> Void
     let onDiscard: () -> Void
 
-    @AppStorage("develop.lastStyle") private var savedStyle = Data()
+    @AppStorage("develop.look") private var savedLook = Look.natural.rawValue
+    @AppStorage("develop.grain") private var savedGrain = GrainLevel.off.rawValue
+    @AppStorage("develop.frame") private var savedFrame = PhotoFrame.none.rawValue
 
     @State private var developer: PhotoDeveloper?
     @State private var settings = DevelopSettings()
@@ -20,7 +20,7 @@ struct DevelopView: View {
     @State private var thumbnails: [Look: UIImage] = [:]
     @State private var isSaving = false
     @State private var message: String?
-    @State private var confirmingDelete = false
+    @State private var confirmingDiscard = false
     @State private var pendingRender: DevelopSettings?
     @State private var isRendering = false
 
@@ -33,7 +33,7 @@ struct DevelopView: View {
 
             if let message {
                 Text(message)
-                    .font(.footnote)
+                    .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
             }
@@ -59,11 +59,11 @@ struct DevelopView: View {
         }
         .background(Color.black.ignoresSafeArea())
         // The photo comes first, so the controls stop growing before they would crowd it out.
-        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .sensoryFeedback(.selection, trigger: settings) { _, _ in
             developer != nil
         }
-        .onAppear(perform: loadStyle)
+        .onAppear(perform: loadSettings)
         .task { await prepareQuickPreview() }
         .task(id: photo.data != nil) { await prepare() }
         .onChange(of: settings) { _, _ in
@@ -106,61 +106,50 @@ struct DevelopView: View {
     }
 
     private var lookPicker: some View {
-        ScrollViewReader { reader in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(Look.allCases) { look in
-                        lookButton(look)
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-            .onChange(of: settings.look) { _, look in
-                withAnimation(Theme.quick) { reader.scrollTo(look.id, anchor: .center) }
-            }
-        }
-    }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Look.allCases) { look in
+                    Button {
+                        settings.look = look
+                    } label: {
+                        VStack(spacing: 6) {
+                            Group {
+                                if let thumbnail = thumbnails[look] {
+                                    Image(uiImage: thumbnail)
+                                        .resizable()
+                                        .scaledToFill()
+                                } else {
+                                    Theme.control
+                                }
+                            }
+                            .frame(width: 60, height: 74)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                if settings.look == look {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(Color.white, lineWidth: 2)
+                                }
+                            }
 
-    private func lookButton(_ look: Look) -> some View {
-        let isSelected = settings.look == look
-        return Button {
-            settings.look = look
-        } label: {
-            VStack(spacing: 6) {
-                Group {
-                    if let thumbnail = thumbnails[look] {
-                        Image(uiImage: thumbnail)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        Theme.control
+                            Text(look.title)
+                                .font(.caption)
+                                .foregroundStyle(settings.look == look ? .primary : .secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(look.title)
+                    .accessibilityAddTraits(settings.look == look ? .isSelected : [])
                 }
-                .frame(width: 60, height: 74)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Theme.accent, lineWidth: 2)
-                    }
-                }
-
-                Text(look.title)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .foregroundStyle(isSelected ? Color.white : Color.secondary)
             }
+            .padding(.horizontal, 16)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(look.title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func optionButton(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline)
-                .foregroundStyle(isOn ? Color.white : Color.secondary)
+                .foregroundStyle(isOn ? .primary : .secondary)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
         }
@@ -168,19 +157,14 @@ struct DevelopView: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
-            Button {
-                confirmingDelete = true
-            } label: {
-                Text("Delete")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 104, height: 46)
-                    .background(Theme.control, in: Capsule())
-                    .contentShape(Capsule())
+        HStack(spacing: 12) {
+            Button("Retake") {
+                confirmingDiscard = true
             }
-            .confirmationDialog("Delete this photo?", isPresented: $confirmingDelete) {
-                Button("Delete Photo", role: .destructive, action: onDiscard)
+            .buttonStyle(.bordered)
+            .tint(.white)
+            .confirmationDialog("Discard this photo?", isPresented: $confirmingDiscard) {
+                Button("Discard Photo", role: .destructive, action: onDiscard)
             }
 
             Button(action: save) {
@@ -190,27 +174,30 @@ struct DevelopView: View {
                             .tint(.black)
                     } else {
                         Text("Save")
-                            .font(.subheadline.weight(.semibold))
+                            .fontWeight(.semibold)
                     }
                 }
                 .foregroundStyle(.black)
-                .frame(maxWidth: .infinity, minHeight: 46)
-                .background(Theme.accent, in: Capsule())
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.white)
             .disabled(developer == nil)
-            .accessibilityLabel("Save")
         }
+        .controlSize(.large)
+        .buttonBorderShape(.capsule)
         .disabled(isSaving)
     }
 
-    private func loadStyle() {
-        settings = (try? JSONDecoder().decode(DevelopSettings.self, from: savedStyle)) ?? DevelopSettings()
-        if let suggestedLook {
-            settings.look = suggestedLook
-        }
+    private func loadSettings() {
+        settings = DevelopSettings(
+            look: Look(rawValue: savedLook) ?? .natural,
+            grain: GrainLevel(rawValue: savedGrain) ?? .off,
+            frame: PhotoFrame(rawValue: savedFrame) ?? .none
+        )
     }
 
-    /// Shows the viewfinder frame with your style right away, so nothing jumps when the photo lands.
+    /// Shows the viewfinder frame with your look and frame right away, so nothing jumps when the photo lands.
     private func prepareQuickPreview() async {
         guard let placeholder = photo.placeholder, preview == nil else { return }
         let current = settings
@@ -262,8 +249,9 @@ struct DevelopView: View {
 
     private func loadOriginal() {
         guard original == nil, let developer else { return }
-        var plain = DevelopSettings()
-        plain.frame = settings.frame
+        var plain = settings
+        plain.look = .natural
+        plain.grain = .off
         Task {
             original = await Task.detached(priority: .userInitiated) {
                 developer.renderPreview(plain)
@@ -276,14 +264,14 @@ struct DevelopView: View {
         isSaving = true
         message = nil
         let current = settings
-        let thumbnail = preview.flatMap { shown in
-            shown.preparingThumbnail(of: CGSize(width: 160, height: 160 * shown.size.height / shown.size.width))
-        }
+        let thumbnail = preview?.preparingThumbnail(of: CGSize(width: 160, height: 200))
         Task {
             do {
                 try await developer.save(current)
                 // Only a kept photo sets the starting point for the next one.
-                savedStyle = (try? JSONEncoder().encode(current.style)) ?? savedStyle
+                savedLook = current.look.rawValue
+                savedGrain = current.grain.rawValue
+                savedFrame = current.frame.rawValue
                 onSaved(thumbnail)
             } catch {
                 message = error.localizedDescription

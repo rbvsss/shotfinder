@@ -91,9 +91,9 @@ final class MotionTracker {
     }
 
     /// The latest position for drawing. Cheap enough to call every frame.
-    func snapshot() -> (roll: Double, isFlat: Bool, projection: GuideProjection?) {
+    func snapshot() -> (roll: Double, projection: GuideProjection?) {
         // Pointing straight up or down there is no horizon, and the reading is only noise.
-        lock.withLock { (live.isFlat ? 0 : live.roll, live.isFlat, Self.projection(in: live)) }
+        lock.withLock { (live.isFlat ? 0 : live.roll, Self.projection(in: live)) }
     }
 
     /// Rotation for a photo so it comes out upright however the phone is held.

@@ -7,7 +7,7 @@ final class GeometryTests: XCTestCase {
     private let identity = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
 
     private func target(x: Double = 0.7, y: Double = 0.3, size: Double = 0.25, ratio: CaptureRatio = .threeFour) -> ScanTarget {
-        let result = ScanResult(label: "a", tip: "b", centerX: x, centerY: y, size: size, look: .natural)
+        let result = ScanResult(label: "a", tip: "b", centerX: x, centerY: y, size: size)
         return ScanTarget(result: result, optics: optics, scanZoomFactor: 1, scanLens: 0.5, ratio: ratio)
     }
 

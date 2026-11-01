@@ -6,11 +6,6 @@ enum CaptureRatio: String, CaseIterable {
     case square = "1:1"
     case nineSixteen = "9:16"
 
-    var next: CaptureRatio {
-        let all = Self.allCases
-        return all[((all.firstIndex(of: self) ?? 0) + 1) % all.count]
-    }
-
     /// Width over height when the phone is held upright.
     var widthOverHeight: CGFloat {
         switch self {

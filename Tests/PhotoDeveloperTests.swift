@@ -54,9 +54,9 @@ final class PhotoDeveloperTests: XCTestCase {
         }
     }
 
-    func testBlackAndWhiteIsNeutral() throws {
+    func testGraphiteIsNeutral() throws {
         var settings = DevelopSettings()
-        settings.look = .soot
+        settings.look = .graphite
         let color = try averageColor(XCTUnwrap(developer().renderPreview(settings)))
         XCTAssertLessThan(abs(Int(color[0]) - Int(color[2])), 8)
     }
@@ -113,9 +113,9 @@ final class PhotoDeveloperTests: XCTestCase {
             settings.grain = level
             let preview = try noise(in: XCTUnwrap(ready.renderPreview(settings)))
             let saved = try noise(in: XCTUnwrap(ready.renderFullSize(settings)))
-            XCTAssertGreaterThan(preview, 1, "\(level)")
-            XCTAssertGreaterThan(saved / preview, 0.6, "\(level): preview \(preview), saved \(saved)")
-            XCTAssertLessThan(saved / preview, 1.6, "\(level): preview \(preview), saved \(saved)")
+            XCTAssertGreaterThan(preview, 1, level.rawValue)
+            XCTAssertGreaterThan(saved / preview, 0.6, "\(level.rawValue): preview \(preview), saved \(saved)")
+            XCTAssertLessThan(saved / preview, 1.6, "\(level.rawValue): preview \(preview), saved \(saved)")
         }
     }
 
@@ -123,93 +123,10 @@ final class PhotoDeveloperTests: XCTestCase {
         let ready = try developer()
         let plain = try XCTUnwrap(ready.renderPreview(DevelopSettings()))
         var settings = DevelopSettings()
-        settings.frame = .paper
+        settings.frame = .mat
         let framed = try XCTUnwrap(ready.renderPreview(settings))
         XCTAssertEqual(framed.size.width, plain.size.width * 1.12, accuracy: 2)
         XCTAssertEqual(framed.size.height, plain.size.height + plain.size.width * 0.24, accuracy: 2)
-    }
-
-    /// The colour of the pixel just inside an image's top left corner.
-    private func cornerColor(_ image: UIImage) throws -> [Int] {
-        let cgImage = try XCTUnwrap(image.cgImage)
-        var pixel = [UInt8](repeating: 0, count: 4)
-        let context = try XCTUnwrap(CGContext(
-            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ))
-        context.draw(cgImage, in: CGRect(x: -2, y: 1 - CGFloat(cgImage.height) + 2, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)))
-        return pixel.map(Int.init)
-    }
-
-    func testPrintFrameIsWhiteOutsideAndRoughInside() throws {
-        var settings = DevelopSettings()
-        settings.frame = .print
-        let image = try XCTUnwrap(developer().renderPreview(settings)?.cgImage)
-        let context = try XCTUnwrap(CGContext(
-            data: nil,
-            width: image.width,
-            height: image.height,
-            bitsPerComponent: 8,
-            bytesPerRow: image.width,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ))
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
-
-        // Rows across the left edge: the border is white, and how deep it goes varies along the edge.
-        var depths = Set<Int>()
-        for row in stride(from: image.height / 10, to: image.height * 9 / 10, by: 8) {
-            let line = pixels + row * image.width
-            XCTAssertGreaterThan(line[1], 240)
-            var depth = 0
-            while depth < image.width / 8, line[depth] > 240 {
-                depth += 1
-            }
-            depths.insert(depth)
-        }
-        XCTAssertGreaterThan(depths.count, 3, "The edge should wander, not run straight")
-    }
-
-    func testPaperStaysLightWhateverIsApplied() throws {
-        let ready = try developer()
-        let look = try XCTUnwrap(Look.allCases.first { $0 != .natural })
-        let changes: [(String, (inout DevelopSettings) -> Void)] = [
-            ("frame only", { _ in }),
-            ("look", { $0.look = look }),
-            ("grain", { $0.grain = .fine }),
-            ("look and grain", { $0.look = look; $0.grain = .fine })
-        ]
-        for (name, change) in changes {
-            var settings = DevelopSettings()
-            settings.frame = .paper
-            change(&settings)
-            let corner = try cornerColor(XCTUnwrap(ready.renderPreview(settings)))
-            XCTAssertGreaterThan(corner[0], 220, "\(name): \(corner)")
-            XCTAssertEqual(corner[3], 255, "\(name): \(corner)")
-        }
-    }
-
-    func testEveryFrameRenders() throws {
-        let ready = try developer()
-        for frame in PhotoFrame.allCases {
-            var settings = DevelopSettings()
-            settings.frame = frame
-            XCTAssertNotNil(ready.renderPreview(settings), frame.rawValue)
-        }
-    }
-
-    func testFrameStartsOffOnTheNextPhoto() throws {
-        var settings = DevelopSettings()
-        XCTAssertEqual(settings.frame, .none)
-        settings.look = .honey
-        settings.grain = .fine
-        settings.frame = .print
-        let decoded = try JSONDecoder().decode(DevelopSettings.self, from: JSONEncoder().encode(settings.style))
-        XCTAssertEqual(decoded.look, .honey)
-        XCTAssertEqual(decoded.grain, .fine)
-        XCTAssertEqual(decoded.frame, .none)
     }
 
     func testUnreadablePhotoFailsCleanly() {

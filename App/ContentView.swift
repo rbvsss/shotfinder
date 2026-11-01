@@ -14,40 +14,22 @@ struct ContentView: View {
     private static let keepAwakeLimit: UInt64 = 120_000_000_000
     /// How long a scan can run before saying so.
     private static let slowScanDelay: UInt64 = 8_000_000_000
-    /// How long a press must rest in place to lock focus.
-    private static let focusLockDelay: UInt64 = 600_000_000
-    /// How long the focus square stays after you let go.
-    private static let focusMarkDelay: UInt64 = 2_000_000_000
-    /// How far a finger can move and still count as a tap or a hold.
-    private static let touchSlop: CGFloat = 12
-    /// Dragging this many points changes brightness by the range below.
-    private static let exposureDragLength: CGFloat = 150
-    private static let exposureDragRange: Float = 2
-    /// The last saved photo's thumbnail, since the app may add to Photos but not read from it.
-    private static let lastPhotoURL = URL.cachesDirectory.appending(path: "last-photo.jpg")
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("camera.ratio") private var ratio = CaptureRatio.threeFour
-    @AppStorage("camera.timer") private var timer = 0
-    @AppStorage("camera.grid") private var showsGrid = false
-    @AppStorage("camera.level") private var showsLevel = false
+    @AppStorage("camera.hasScanned") private var hasScanned = false
     @State private var isScanning = false
     @State private var scanIsSlow = false
     @State private var scanTask: Task<Void, Never>?
     @State private var message: String?
     @State private var showingSettings = false
-    @State private var countdown: Int?
-    @State private var countdownTask: Task<Void, Never>?
     @State private var lastPhoto: UIImage?
     @State private var saves = 0
     @GestureState private var pinchStartZoom: Double?
     @State private var focusPoint: CGPoint?
-    @State private var focusMarkTask: Task<Void, Never>?
-    @State private var touch: ViewfinderTouch?
     @State private var shutterBlink = false
     @GestureState private var shutterHeld = false
-    @State private var shutterFired = false
     @State private var iconAngle = 0.0
     @State private var idleStop: Task<Void, Never>?
     /// The zoom to go back to after a scan, since scanning switches to the widest lens.
@@ -70,10 +52,8 @@ struct ContentView: View {
                 DevelopView(
                     photo: photo,
                     ratio: ratio,
-                    suggestedLook: motion.target?.look,
                     onSaved: { thumbnail in
                         withAnimation(.snappy(duration: 0.25)) { lastPhoto = thumbnail }
-                        try? thumbnail?.jpegData(compressionQuality: 0.8)?.write(to: Self.lastPhotoURL)
                         saves += 1
                         camera.closePhoto()
                         // The shot is taken, so the guide has done its job.
@@ -89,7 +69,7 @@ struct ContentView: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showingSettings) {
-            SettingsView(camera: camera)
+            SettingsView()
         }
         .onChange(of: camera.errorMessage) { _, newMessage in
             if let newMessage {
@@ -119,9 +99,7 @@ struct ContentView: View {
             shots: camera.shutterBlinks,
             turns: motion.quarterTurns,
             photo: camera.capturedPhoto?.id,
-            guide: motion.guide,
-            focus: focusPoint,
-            pinch: pinchStartZoom
+            guide: motion.guide
         )) {
             UIApplication.shared.isIdleTimerDisabled = scenePhase == .active
             guard scenePhase == .active else { return }
@@ -156,10 +134,6 @@ struct ContentView: View {
             capturing
         }
         .sensoryFeedback(.success, trigger: saves)
-        .sensoryFeedback(.selection, trigger: countdown)
-        .sensoryFeedback(.impact(weight: .medium), trigger: camera.isFocusLocked) { _, locked in
-            locked
-        }
         .onCameraCaptureEvent(isEnabled: camera.status == .ready && camera.capturedPhoto == nil && !showingSettings) { event in
             if event.phase == .ended {
                 takePhoto()
@@ -195,18 +169,32 @@ struct ContentView: View {
                 motion: motion,
                 isScanning: isScanning,
                 scanIsSlow: scanIsSlow,
-                message: message ?? camera.interruption
+                message: message ?? camera.interruption,
+                showsFirstHint: !hasScanned
             )
-            .frame(minHeight: 44)
+            .frame(minHeight: 64, alignment: .top)
+            .padding(.top, 14)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 0)
 
-            LensRow(camera: camera, motion: motion, iconAngle: iconAngle)
+            // Everything you touch sits here, within reach of your thumb.
+            ZStack {
+                LensRow(camera: camera, motion: motion, iconAngle: iconAngle, isShown: isIdle)
+                HStack {
+                    Spacer()
+                    optionsMenu
+                }
+            }
+            // Guiding leaves only the photo, the shot's name and the two buttons you need.
+            .opacity(isIdle ? 1 : 0)
+            .allowsHitTesting(isIdle)
+            .padding(.horizontal, 32)
+            .padding(.bottom, 8)
 
             controls
-                .padding(.horizontal, 48)
-                .padding(.bottom, 4)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 12)
         }
     }
 
@@ -220,38 +208,13 @@ struct ContentView: View {
 
             RatioMask(crop: ratio.cropInViewfinder)
 
-            if showsGrid {
-                GridLines(crop: ratio.cropInViewfinder)
+            if motion.target != nil {
+                LiveGuide(motion: motion, isPaused: camera.capturedPhoto != nil || motion.guide.isAligned)
+                    .transition(.opacity)
             }
 
-            if motion.target != nil || showsLevel {
-                LiveGuide(
-                    motion: motion,
-                    showsLevel: showsLevel || motion.target != nil,
-                    isPaused: camera.capturedPhoto != nil || showingSettings
-                )
-                .transition(.opacity)
-            }
-
-            if let countdown {
-                Text("\(countdown)")
-                    .font(.system(size: 96, weight: .thin))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .shadow(color: Theme.keyline, radius: 2)
-                    .rotationEffect(.degrees(iconAngle))
-                    .allowsHitTesting(false)
-            }
-
-            if camera.isFocusLocked {
-                Text("AE/AF LOCK")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(.white)
-                    .shadow(color: Theme.keyline, radius: 1)
-                    .padding(.top, 12)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .allowsHitTesting(false)
+            if isScanning {
+                ScanBrackets(crop: ratio.cropInViewfinder)
                     .transition(.opacity)
             }
 
@@ -262,60 +225,21 @@ struct ContentView: View {
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
         .clipped()
-        .overlay(alignment: .top) { topRow }
+        .overlay(alignment: .topLeading) { flashIndicator }
     }
 
-    /// The ratio, flash and settings, over the view. Guiding hides them, leaving only the shot.
-    private var topRow: some View {
-        HStack(spacing: 0) {
-            Button {
-                withAnimation(Theme.quick) { ratio = ratio.next }
-            } label: {
-                Text(ratio.rawValue)
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .rotationEffect(.degrees(iconAngle))
-                    .padding(.horizontal, 12)
-                    .frame(minWidth: 44, minHeight: 32)
-                    .background(Theme.pill, in: Capsule())
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Aspect, \(ratio.rawValue)")
-
-            Spacer()
-
-            if camera.hasFlash {
-                topButton(symbol: camera.flashMode.symbol, isOn: camera.flashMode != .off, label: "Flash, \(camera.flashMode.title)") {
-                    camera.cycleFlash()
-                }
-            }
-
-            // Lit while Night or the timer, which live in Settings, are changing how photos are taken.
-            topButton(symbol: "ellipsis", isOn: camera.isNightOn || timer != 0, label: "Settings") {
-                showingSettings = true
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.top, 4)
-        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
-        .opacity(isIdle ? 1 : 0)
-        .allowsHitTesting(isIdle)
-    }
-
-    private func topButton(symbol: String, isOn: Bool, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(isOn ? Theme.accent : Color.white)
+    @ViewBuilder
+    private var flashIndicator: some View {
+        if camera.flashMode != .off {
+            Image(systemName: camera.flashMode == .on ? "bolt.fill" : "bolt.badge.automatic.fill")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.white)
+                .shadow(color: Theme.keyline, radius: 1)
                 .rotationEffect(.degrees(iconAngle))
-                .frame(width: 32, height: 32)
-                .background(Theme.pill, in: Circle())
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                .padding(16)
+                .accessibilityLabel(camera.flashMode == .on ? "Flash on" : "Flash auto")
+                .transition(.opacity)
         }
-        .accessibilityLabel(label)
     }
 
     @ViewBuilder
@@ -341,67 +265,23 @@ struct ContentView: View {
         GeometryReader { geometry in
             Color.clear
                 .contentShape(Rectangle())
-                .gesture(touchGesture(in: geometry.size))
+                .gesture(
+                    SpatialTapGesture().onEnded { value in
+                        setFocus(at: value.location, in: geometry.size)
+                    }
+                )
                 .simultaneousGesture(pinchGesture)
 
             if let focusPoint {
-                FocusMark(exposure: camera.tapExposure)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.white, lineWidth: 1.5)
+                    .frame(width: 64, height: 64)
+                    .shadow(color: Theme.keyline, radius: 1)
                     .position(focusPoint)
                     .transition(.opacity)
                     .allowsHitTesting(false)
             }
         }
-    }
-
-    /// Tap to focus, hold to lock, and drag up or down after focusing to change brightness.
-    private func touchGesture(in size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                // A touch the system cancelled never ended, so a new starting point replaces it.
-                if let stale = touch, stale.start != value.startLocation {
-                    stale.holdTask.cancel()
-                    touch = nil
-                }
-                var current = touch ?? beginTouch(at: value.startLocation, in: size)
-                let distance = hypot(value.translation.width, value.translation.height)
-                if distance > Self.touchSlop || pinchStartZoom != nil {
-                    current.hasMoved = true
-                    current.holdTask.cancel()
-                }
-                // Only a focus square already showing can be dragged, as on the iPhone camera.
-                if current.hasMoved, pinchStartZoom == nil, focusPoint != nil {
-                    focusMarkTask?.cancel()
-                    let change = Float(-value.translation.height / Self.exposureDragLength) * Self.exposureDragRange
-                    let range = Self.exposureDragRange
-                    camera.setTapExposure(min(max(current.startExposure + change, -range), range))
-                }
-                touch = current
-            }
-            .onEnded { value in
-                guard let ended = touch else { return }
-                ended.holdTask.cancel()
-                touch = nil
-                if ended.didLock {
-                    return
-                } else if !ended.hasMoved {
-                    setFocus(at: value.startLocation, in: size)
-                } else if focusPoint != nil {
-                    camera.finishExposureDrag()
-                    fadeFocusMark()
-                }
-            }
-    }
-
-    private func beginTouch(at location: CGPoint, in size: CGSize) -> ViewfinderTouch {
-        let hold = Task {
-            try? await Task.sleep(nanoseconds: Self.focusLockDelay)
-            guard !Task.isCancelled else { return }
-            touch?.didLock = true
-            focusMarkTask?.cancel()
-            camera.lockFocus(atX: location.x / size.width, y: location.y / size.height)
-            withAnimation(Theme.quick) { focusPoint = location }
-        }
-        return ViewfinderTouch(start: location, startExposure: camera.tapExposure, holdTask: hold)
     }
 
     private var pinchGesture: some Gesture {
@@ -412,6 +292,54 @@ struct ContentView: View {
                 motion.noteZoomTaken()
                 camera.zoom(to: origin * value.magnification, animated: false)
             }
+    }
+
+    private var optionsMenu: some View {
+        Menu {
+            if camera.hasFlash {
+                Picker(selection: flashBinding) {
+                    Text("Auto").tag(AVCaptureDevice.FlashMode.auto)
+                    Text("On").tag(AVCaptureDevice.FlashMode.on)
+                    Text("Off").tag(AVCaptureDevice.FlashMode.off)
+                } label: {
+                    Label("Flash", systemImage: "bolt")
+                }
+                .pickerStyle(.menu)
+            }
+
+            Picker(selection: $ratio) {
+                ForEach(CaptureRatio.allCases, id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            } label: {
+                Label("Aspect Ratio", systemImage: "aspectratio")
+            }
+            .pickerStyle(.menu)
+            .disabled(!isIdle)
+
+            Divider()
+
+            Button("Settings", systemImage: "gearshape") {
+                showingSettings = true
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.white)
+                .rotationEffect(.degrees(iconAngle))
+                .frame(width: 52, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Options")
+    }
+
+    private var flashBinding: Binding<AVCaptureDevice.FlashMode> {
+        Binding(
+            get: { camera.flashMode },
+            set: { newValue in
+                withAnimation(Theme.quick) { camera.flashMode = newValue }
+            }
+        )
     }
 
     private var controls: some View {
@@ -445,16 +373,9 @@ struct ContentView: View {
                     Color.clear
                 }
             }
-            .frame(width: 46, height: 46)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay {
-                if lastPhoto != nil {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
-                }
-            }
-            .rotationEffect(.degrees(iconAngle))
             .frame(width: 52, height: 52)
+            .clipShape(Circle())
+            .rotationEffect(.degrees(iconAngle))
         }
         .buttonStyle(PressStyle())
         .disabled(lastPhoto == nil)
@@ -465,11 +386,12 @@ struct ContentView: View {
     private var shutter: some View {
         ZStack {
             Circle()
-                .stroke(Color.white, lineWidth: 4)
-                .frame(width: 72, height: 72)
+                .stroke(motion.guide.isAligned ? Color.accentColor : Color.white, lineWidth: 3)
+                .animation(.easeOut(duration: 0.12), value: motion.guide.isAligned)
+                .frame(width: 76, height: 76)
             Circle()
                 .fill(Color.white)
-                .frame(width: 60, height: 60)
+                .frame(width: 64, height: 64)
                 .scaleEffect(shutterHeld ? 0.9 : 1)
                 .animation(Theme.quick, value: shutterHeld)
         }
@@ -479,21 +401,12 @@ struct ContentView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($shutterHeld) { _, held, _ in
-                    held = true
-                }
-                .onChanged { _ in
-                    if !shutterFired {
-                        shutterFired = true
+                    if !held {
                         takePhoto()
                     }
+                    held = true
                 }
         )
-        // Follows the gesture state, which also resets if the press is interrupted.
-        .onChange(of: shutterHeld) { _, held in
-            if !held {
-                shutterFired = false
-            }
-        }
         .accessibilityElement()
         .accessibilityLabel("Take photo")
         .accessibilityValue(motion.guide.isAligned ? "Lined up" : "")
@@ -504,8 +417,8 @@ struct ContentView: View {
     private var scanButton: some View {
         Button(action: scanButtonTapped) {
             Image(systemName: scanSymbol)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(scanButtonIsLit ? Theme.accent : Color.white)
+                .font(.title3.weight(.medium))
+                .foregroundStyle(.white)
                 .contentTransition(.symbolEffect(.replace))
                 .rotationEffect(.degrees(iconAngle))
                 .frame(width: 52, height: 52)
@@ -519,13 +432,8 @@ struct ContentView: View {
         !isScanning && motion.target == nil
     }
 
-    /// Yellow when pressing it starts a scan, plain when it stops one.
-    private var scanButtonIsLit: Bool {
-        isIdle || motion.guide.isAligned
-    }
-
     private var scanSymbol: String {
-        if isIdle { return "sparkles" }
+        if isIdle { return "viewfinder" }
         return motion.guide.isAligned ? "arrow.clockwise" : "xmark"
     }
 
@@ -540,15 +448,11 @@ struct ContentView: View {
         }
         camera.start()
         motion.start()
-        lastPhoto = UIImage(contentsOfFile: Self.lastPhotoURL.path)
     }
 
     private func handle(_ phase: ScenePhase) {
         switch phase {
         case .background:
-            countdownTask?.cancel()
-            countdownTask = nil
-            countdown = nil
             // Turns made while the app is away can't be measured, so the guide would be wrong.
             stopGuiding()
             motion.stop()
@@ -591,43 +495,16 @@ struct ContentView: View {
     private func setFocus(at location: CGPoint, in size: CGSize) {
         camera.focus(atX: location.x / size.width, y: location.y / size.height)
         withAnimation(Theme.quick) { focusPoint = location }
-        fadeFocusMark()
-    }
-
-    private func fadeFocusMark() {
-        focusMarkTask?.cancel()
-        guard !camera.isFocusLocked else { return }
-        focusMarkTask = Task {
-            try? await Task.sleep(nanoseconds: Self.focusMarkDelay)
-            if !Task.isCancelled {
+        Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if focusPoint == location {
                 withAnimation(Theme.quick) { focusPoint = nil }
             }
         }
     }
 
-    /// Shoots now, or starts the timer. Pressing again during a countdown cancels it.
     private func takePhoto() {
-        if let running = countdownTask {
-            running.cancel()
-            countdownTask = nil
-            countdown = nil
-            return
-        }
-        guard timer > 0 else {
-            camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
-            return
-        }
-        let seconds = timer
-        countdownTask = Task {
-            for remaining in stride(from: seconds, to: 0, by: -1) {
-                countdown = remaining
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if Task.isCancelled { return }
-            }
-            countdown = nil
-            countdownTask = nil
-            camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
-        }
+        camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
     }
 
     private func blinkShutter() {
@@ -691,17 +568,17 @@ struct ContentView: View {
             do {
                 try await Task.sleep(nanoseconds: Self.lensSettleDelay)
                 let frame = try await camera.captureScanFrame { [motion] in motion.mark() }
-                let scanLens = camera.displayZoom(forFactor: frame.zoomFactor)
-                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, scanLens: scanLens, apiKey: apiKey)
+                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, apiKey: apiKey)
                 try Task.checkCancellation()
                 guard let optics = camera.optics else { throw ScanError.badResponse }
                 let target = ScanTarget(
                     result: result,
                     optics: optics,
                     scanZoomFactor: frame.zoomFactor,
-                    scanLens: scanLens,
+                    scanLens: camera.displayZoom(forFactor: frame.zoomFactor),
                     ratio: scanRatio
                 )
+                hasScanned = true
                 withAnimation(Theme.quick) {
                     isScanning = false
                     motion.setTarget(target, optics: optics, crop: scanRatio.cropInViewfinder)
@@ -719,15 +596,6 @@ struct ContentView: View {
         }
     }
 
-    /// One finger on the viewfinder, from touch down until it lifts.
-    private struct ViewfinderTouch {
-        let start: CGPoint
-        let startExposure: Float
-        let holdTask: Task<Void, Never>
-        var hasMoved = false
-        var didLock = false
-    }
-
     /// Anything that counts as using the camera restarts the keep-awake countdown.
     private struct AwakeKey: Equatable {
         let isActive: Bool
@@ -736,36 +604,47 @@ struct ContentView: View {
         let turns: Int
         let photo: UUID?
         let guide: GuideState
-        let focus: CGPoint?
-        let pinch: Double?
     }
 }
 
-/// The line below the viewfinder: how to get the shot, or what the app is doing.
+/// The text below the viewfinder: what the shot is and how to get it.
 private struct HintView: View {
     let motion: MotionTracker
     let isScanning: Bool
     let scanIsSlow: Bool
     let message: String?
+    let showsFirstHint: Bool
 
     var body: some View {
-        Group {
+        VStack(spacing: 2) {
             if let message {
                 Text(message)
+                    .font(.subheadline)
             } else if isScanning {
-                Text(scanIsSlow ? "Still looking…" : "Finding your shot…")
-                    .foregroundStyle(Theme.accent)
+                if scanIsSlow {
+                    Text("Still looking")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             } else if let target = motion.target {
+                Text(target.displayLabel)
+                    .font(.headline)
+                    .lineLimit(1)
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else if showsFirstHint {
+                Text("Tap \(Image(systemName: "viewfinder")) to scan for a shot")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
-        .font(.subheadline)
         .multilineTextAlignment(.center)
         .lineLimit(2)
         .frame(maxWidth: .infinity)
         .animation(Theme.quick, value: message)
         .animation(Theme.quick, value: scanIsSlow)
-        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 }
 
@@ -774,11 +653,12 @@ private struct LensRow: View {
     let camera: CameraController
     let motion: MotionTracker
     let iconAngle: Double
+    let isShown: Bool
 
     private static let matchTolerance = 0.03
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(camera.lenses, id: \.self) { lens in
                 let isActive = lens == activeLens
                 Button {
@@ -788,10 +668,9 @@ private struct LensRow: View {
                     Text(label(isActive ? camera.zoomDisplay : lens))
                         .font(.subheadline.weight(isActive ? .semibold : .regular))
                         .monospacedDigit()
-                        .lineLimit(1)
-                        .foregroundStyle(isActive ? Theme.accent : Color.secondary)
+                        .foregroundStyle(isActive ? .primary : .secondary)
                         .rotationEffect(.degrees(iconAngle))
-                        .frame(minWidth: 48, minHeight: 44)
+                        .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -799,9 +678,9 @@ private struct LensRow: View {
             }
         }
         .sensoryFeedback(.selection, trigger: activeLens) { old, _ in
-            old != nil
+            isShown && old != nil
         }
-        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     /// The lens that shows the live zoom: the nearest one at or below it, so pinching never moves the row.

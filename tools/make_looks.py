@@ -58,8 +58,6 @@ LAB_FROM_LMS = np.array([
 RGB_FROM_LMS = np.linalg.inv(LMS_FROM_RGB)
 LMS_FROM_LAB = np.linalg.inv(LAB_FROM_LMS)
 MID_GREY = 0.18
-NEUTRAL_LAYERS = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-NEUTRAL_WIDTH = 0.026
 
 
 def to_linear(v):
@@ -130,16 +128,7 @@ def colour_map(lab, table, chroma_curve, density):
         shift += weight * turn
         scale += weight * (multiply - 1)
         darken += weight * deepen
-    # Density eases off at high chroma so vivid ramps keep rising in lightness.
-    return from_polar(L - darken * chroma / (1 + 2.5 * chroma), chroma * scale * curve(chroma_curve)(L), hue + shift * settled)
-
-
-def hold_neutrals(lab, source):
-    """Gives near-neutrals back their own colour, so contrast and couplers can't stain walls and white lines."""
-    weight = bump(polar(source)[0], 0, NEUTRAL_WIDTH)[..., None]
-    held = lab.copy()
-    held[..., 1:] += weight * (source[..., 1:] - lab[..., 1:])
-    return held
+    return from_polar(L - darken * chroma, chroma * scale * curve(chroma_curve)(L), hue + shift * settled)
 
 
 def tint(lab, tint_a, tint_b):
@@ -151,20 +140,19 @@ def tint(lab, tint_a, tint_b):
     ], axis=-1)
 
 
-def protect_skin(lab, source, amount, saturation, center):
-    """Pulls skin into a narrow band of warm hues around `center`, keeping the look's lightness and its own chroma."""
+def protect_skin(lab, source, amount, saturation, center=58.0):
+    """Holds skin to a narrow band of warm hues near its original chroma, whatever the look does."""
     chroma, hue = polar(source)
     weight = (
         amount
-        * hue_bump(hue, 53, 24)
-        * np.clip(chroma / 0.022, 0, 1) ** 2
-        * np.clip((0.17 - chroma) / 0.06, 0, 1) ** 2
-        * np.clip(source[..., 0] / 0.2, 0, 1) ** 2
-        * np.clip((1 - source[..., 0]) / 0.1, 0, 1) ** 2
+        * hue_bump(hue, center, 22)
+        * np.clip(chroma / 0.025, 0, 1) ** 2
+        * np.clip((0.20 - chroma) / 0.07, 0, 1) ** 2
+        * bump(source[..., 0], 0.62, 0.32)
     )
     # A darker rendering carries less chroma, so scale with the lightness the look gave it.
     scaled = chroma * saturation * np.clip(lab[..., 0] / np.maximum(source[..., 0], 0.05), 0.6, 1.1) ** 0.7
-    held = from_polar(lab[..., 0], scaled, center + 0.7 * ((hue - 53 + 180) % 360 - 180))
+    held = from_polar(lab[..., 0], scaled, center + 0.8 * ((hue - center + 180) % 360 - 180))
     return lab + weight[..., None] * (held - lab)
 
 
@@ -180,202 +168,110 @@ def finish(lab, soft=0.8):
     return to_encoded(grey + offset * held / np.maximum(reach, 1e-6))
 
 
-def film(rgb, layers, couplers, tone, keep_hue, table, chroma_curve, density, tint_a, tint_b, skin_hue, skin_saturation, skin=0.85):
+def film(rgb, layers, couplers, tone, keep_hue, table, chroma_curve, density, tint_a, tint_b, skin=0.8, skin_saturation=0.95):
     source = oklab(to_linear(rgb))
     lab = colour_map(print_tone(expose(rgb, layers, couplers), tone, keep_hue), table, chroma_curve, density)
-    return finish(protect_skin(tint(hold_neutrals(lab, source), tint_a, tint_b), source, skin, skin_saturation, skin_hue))
+    return finish(protect_skin(tint(lab, tint_a, tint_b), source, skin, skin_saturation))
 
 
-def honey(rgb):
-    """Warm colour negative after Portra and Gold: golden highlights, amber skin, olive greens, soft brown blacks."""
+def kiln(rgb):
+    """Warm colour negative after Portra: soft, honeyed, peachy skin, olive greens."""
     return film(
         rgb,
-        layers=NEUTRAL_LAYERS,
-        couplers=0.15,
-        tone=[(0, 0.035), (0.1, 0.085), (0.25, 0.215), (0.5, 0.51), (0.75, 0.80), (0.9, 0.92), (1, 0.965)],
-        keep_hue=0.25,
+        layers=[[0.94, 0.05, 0.01], [0.012, 0.968, 0.02], [0.005, 0.055, 0.94]],
+        couplers=0.10,
+        tone=[(0, 0.032), (0.1, 0.095), (0.25, 0.245), (0.5, 0.525), (0.75, 0.775), (0.9, 0.900), (1, 0.962)],
+        keep_hue=0.35,
         table=[
-            (29, 26, 4, 1.05, 0.10),     # reds lean orange
-            (65, 22, 0, 1.12, 0.0),      # oranges glow
-            (108, 26, -6, 1.05, 0.0),    # yellows lean golden
-            (135, 28, 0, 1.10, -0.12),   # greens lean olive through the warm cast but stay alive
-            (205, 30, 4, 0.85, 0.05),    # cyan to a quiet teal
-            (255, 28, -6, 0.95, 0.20),   # blues deepen and quieten
+            (29, 26, 2, 0.90, 0.05),     # reds lean slightly to orange
+            (108, 26, -6, 0.98, 0.0),    # yellows lean golden
+            (142, 28, -11, 0.80, 0.08),  # greens to olive
+            (205, 30, 10, 0.80, 0.03),   # cyan towards a quieter teal-blue
+            (255, 28, -6, 0.88, 0.10),   # blues deepen and quieten
         ],
-        chroma_curve=[(0, 0.85), (0.3, 1.05), (0.6, 1.10), (0.85, 0.95), (1, 0.6)],
-        density=0.12,
-        tint_a=[(0, 0.0), (0.12, 0.005), (0.6, 0.010), (0.9, 0.008), (1, 0.003)],
-        tint_b=[(0, 0.0), (0.12, 0.006), (0.3, 0.012), (0.6, 0.020), (0.9, 0.026), (1, 0.012)],
-        skin_hue=58,
-        skin_saturation=1.1,
+        chroma_curve=[(0, 0.75), (0.3, 0.92), (0.6, 1.0), (0.85, 0.88), (1, 0.6)],
+        density=0.06,
+        tint_a=[(0, 0.004), (0.3, 0.003), (0.6, 0.002), (1, 0.003)],
+        tint_b=[(0, 0.006), (0.3, 0.005), (0.6, 0.007), (1, 0.012)],
     )
 
 
-def noon(rgb):
-    """Clean bright negative after overexposed Portra 160: open midtones, fresh colour, true whites, firm blacks."""
-    return film(
-        rgb,
-        layers=NEUTRAL_LAYERS,
-        couplers=0.12,
-        tone=[(0, 0.01), (0.1, 0.09), (0.25, 0.31), (0.5, 0.63), (0.75, 0.87), (0.9, 0.96), (1, 1)],
-        keep_hue=0.4,
-        table=[
-            (29, 26, -2, 1.05, 0.05),    # reds stay clean
-            (108, 26, -2, 1.0, 0.0),     # yellows hold
-            (135, 30, -4, 1.0, 0.05),    # greens stay fresh
-            (205, 30, 12, 1.05, 0.05),   # phone cyan turns to true sky blue
-            (255, 28, -4, 1.10, 0.12),   # skies clear
-        ],
-        chroma_curve=[(0, 0.85), (0.3, 1.15), (0.6, 1.15), (0.85, 0.95), (1, 0.55)],
-        density=0.08,
-        tint_a=[(0, 0.0), (1, 0.0)],
-        tint_b=[(0, 0.0), (0.2, -0.002), (0.5, 0.002), (0.9, 0.004), (1, 0.001)],
-        skin_hue=55,
-        skin_saturation=1.02,
-    )
-
-
-def mist(rgb):
-    """Cool soft pastel after Fuji 400H: slate shadows, mint greens, powder skies, gentle pink skin."""
+def fjord(rgb):
+    """Cool and airy after Fuji Pro: lifted slate shadows, mint greens, soft pastel colour."""
     return film(
         rgb,
         layers=[[0.94, 0.05, 0.01], [0.01, 0.95, 0.04], [0.005, 0.045, 0.95]],
-        couplers=0.05,
-        tone=[(0, 0.07), (0.1, 0.125), (0.25, 0.29), (0.5, 0.58), (0.75, 0.83), (0.9, 0.935), (1, 0.98)],
+        couplers=0.06,
+        tone=[(0, 0.052), (0.1, 0.115), (0.25, 0.255), (0.5, 0.525), (0.75, 0.770), (0.9, 0.885), (1, 0.948)],
         keep_hue=0.5,
         table=[
-            (20, 24, -8, 0.90, 0.0),     # reds lean rose
-            (108, 26, 8, 0.85, 0.0),     # yellows lean lemon
-            (135, 30, 22, 0.75, -0.05),  # greens to a bright mint
-            (205, 30, -8, 1.10, 0.0),    # cyan leans to sea-glass
-            (255, 28, -14, 1.0, 0.05),   # blues to powder
+            (20, 24, -8, 0.88, 0.0),     # reds lean rose
+            (108, 26, 8, 0.86, 0.0),     # yellows lean lemon
+            (142, 30, 14, 0.74, 0.03),   # greens to mint
+            (205, 30, 10, 0.96, 0.0),    # cyan holds
+            (255, 28, -8, 0.90, 0.04),   # blues to cyan
         ],
-        chroma_curve=[(0, 0.75), (0.3, 0.92), (0.6, 0.98), (0.85, 0.85), (1, 0.5)],
+        chroma_curve=[(0, 0.6), (0.3, 0.8), (0.6, 0.88), (0.85, 0.78), (1, 0.5)],
         density=0.0,
-        tint_a=[(0, -0.010), (0.3, -0.008), (0.6, -0.005), (1, 0.0)],
-        tint_b=[(0, -0.018), (0.3, -0.018), (0.6, -0.012), (0.85, -0.006), (1, -0.002)],
-        skin_hue=50,
-        skin_saturation=0.92,
+        tint_a=[(0, -0.004), (0.3, -0.005), (0.6, -0.002), (1, -0.001)],
+        tint_b=[(0, -0.011), (0.3, -0.012), (0.6, -0.005), (1, -0.002)],
+        skin_saturation=1.0,
     )
 
 
-def reef(rgb):
-    """Saturated slide film after Velvia: deep cobalt skies, emerald greens, crimson reds, violet-black shadows."""
+def cinder(rgb):
+    """Low and dense after tungsten cine stock: inky teal shadows, warm highlights, deep colour."""
     return film(
         rgb,
-        layers=NEUTRAL_LAYERS,
-        couplers=0.25,
-        tone=[(0, 0.0), (0.1, 0.045), (0.25, 0.17), (0.5, 0.47), (0.75, 0.80), (0.9, 0.94), (1, 0.99)],
-        keep_hue=0.2,
-        table=[
-            (29, 26, -3, 1.18, 0.20),    # reds to crimson
-            (108, 26, 0, 1.10, 0.05),    # yellows ripen
-            (135, 30, 10, 1.25, 0.05),   # greens to emerald
-            (205, 32, 22, 1.20, 0.35),   # cyan to deep blue
-            (255, 30, -5, 1.20, 0.35),   # blues to cobalt
-            (330, 30, 0, 1.20, 0.20),    # magentas deepen
-        ],
-        chroma_curve=[(0, 0.85), (0.3, 1.10), (0.6, 1.20), (0.85, 0.95), (1, 0.55)],
-        density=0.20,
-        tint_a=[(0, 0.0), (0.15, 0.008), (0.35, 0.007), (0.6, 0.003), (1, 0.0)],
-        tint_b=[(0, 0.0), (0.15, -0.016), (0.35, -0.014), (0.6, -0.004), (0.85, 0.002), (1, 0.002)],
-        skin_hue=52,
-        skin_saturation=0.95,
-    )
-
-
-def lantern(rgb):
-    """Tungsten cine stock after Vision3 500T: dense teal shadows, ember highlights, bottle greens."""
-    return film(
-        rgb,
-        layers=NEUTRAL_LAYERS,
-        couplers=0.2,
-        tone=[(0, 0.015), (0.1, 0.05), (0.25, 0.165), (0.5, 0.43), (0.75, 0.74), (0.9, 0.89), (1, 0.955)],
+        layers=[[0.95, 0.04, 0.01], [0.015, 0.965, 0.02], [0.01, 0.06, 0.93]],
+        couplers=0.08,
+        tone=[(0, 0.012), (0.1, 0.040), (0.25, 0.150), (0.5, 0.440), (0.75, 0.750), (0.9, 0.890), (1, 0.950)],
         keep_hue=0.5,
         table=[
-            (29, 26, 6, 1.10, 0.15),     # reds to ember
-            (65, 25, -4, 1.20, 0.0),     # oranges glow
-            (108, 26, -22, 0.85, 0.05),  # yellows to amber
-            (135, 32, 30, 0.85, 0.05),   # greens to bottle teal
-            (195, 30, 10, 1.20, 0.10),   # cyan deepens and holds against the warmth
-            (255, 35, -22, 0.85, 0.20),  # blues to teal
+            (29, 26, 2, 0.92, 0.06),      # reds toward ember
+            (70, 26, -2, 0.92, 0.0),      # oranges hold
+            (142, 30, 10, 0.66, 0.22),    # greens deep and bottle-dark
+            (205, 30, -3, 0.72, 0.12),    # cyan deepens
+            (255, 30, -10, 0.76, 0.16),   # blues toward teal
         ],
-        chroma_curve=[(0, 0.7), (0.2, 0.95), (0.55, 1.05), (0.85, 0.85), (1, 0.5)],
-        density=0.12,
-        tint_a=[(0, 0.0), (0.12, -0.005), (0.3, -0.018), (0.5, -0.004), (0.8, 0.012), (1, 0.004)],
-        tint_b=[(0, 0.0), (0.12, -0.010), (0.3, -0.026), (0.5, -0.006), (0.8, 0.026), (1, 0.010)],
-        skin_hue=58,
-        skin_saturation=1.05,
+        chroma_curve=[(0, 0.6), (0.2, 0.84), (0.55, 0.90), (0.85, 0.76), (1, 0.5)],
+        density=0.10,
+        tint_a=[(0, -0.006), (0.25, -0.008), (0.55, 0.0), (0.8, 0.005), (1, 0.004)],
+        tint_b=[(0, -0.008), (0.25, -0.010), (0.55, 0.002), (0.8, 0.015), (1, 0.012)],
+        skin_saturation=1.0,
     )
 
 
-def attic(rgb):
-    """Faded vintage print from an aged colour album: plum blacks, cream whites, khaki greens, dusty teal skies."""
+def salt(rgb):
+    """Pale overexposed negative: bright open midtones, chalky colour, clean whites."""
     return film(
         rgb,
-        layers=NEUTRAL_LAYERS,
-        couplers=0.1,
-        tone=[(0, 0.105), (0.1, 0.14), (0.25, 0.24), (0.5, 0.50), (0.75, 0.76), (0.9, 0.875), (1, 0.93)],
-        keep_hue=0.4,
+        layers=[[0.88, 0.09, 0.03], [0.04, 0.90, 0.06], [0.02, 0.08, 0.90]],
+        couplers=0.0,
+        tone=[(0, 0.048), (0.1, 0.150), (0.25, 0.345), (0.5, 0.650), (0.75, 0.860), (0.9, 0.948), (1, 0.985)],
+        keep_hue=0.7,
         table=[
-            (29, 26, 8, 0.95, 0.10),     # reds to brick
-            (108, 28, -12, 0.90, 0.0),   # yellows to mustard
-            (135, 30, -20, 0.75, 0.05),  # greens to khaki
-            (205, 30, -6, 0.85, 0.05),   # cyan fades
-            (255, 30, -16, 0.80, 0.10),  # blues to dusty teal
-            (330, 30, -14, 0.80, 0.0),   # magentas to rose
+            (29, 26, 6, 0.90, 0.0),
+            (108, 28, 0, 0.90, 0.0),
+            (142, 30, -4, 0.76, 0.0),
+            (255, 30, 4, 0.80, 0.0),
         ],
-        chroma_curve=[(0, 0.8), (0.3, 0.95), (0.6, 1.0), (0.85, 0.8), (1, 0.45)],
-        density=0.05,
-        tint_a=[(0, 0.014), (0.3, 0.011), (0.6, 0.008), (1, 0.004)],
-        tint_b=[(0, 0.004), (0.3, 0.004), (0.6, 0.012), (1, 0.024)],
-        skin_hue=55,
-        skin_saturation=0.95,
+        chroma_curve=[(0, 0.7), (0.3, 0.88), (0.6, 0.86), (0.85, 0.76), (1, 0.45)],
+        density=0.0,
+        tint_a=[(0, 0.004), (0.3, 0.002), (1, 0.0)],
+        tint_b=[(0, 0.004), (0.3, 0.004), (1, 0.0)],
+        skin_saturation=0.90,
     )
 
 
-def riot(rgb):
-    """Punchy high-contrast colour after pushed consumer film and direct flash: hard blacks, hot reds, bright whites."""
-    return film(
-        rgb,
-        layers=NEUTRAL_LAYERS,
-        couplers=0.3,
-        tone=[(0, 0), (0.1, 0.025), (0.25, 0.135), (0.5, 0.50), (0.75, 0.86), (0.9, 0.97), (1, 1)],
-        keep_hue=0.1,
-        table=[
-            (29, 26, 6, 1.25, 0.12),     # reds to scarlet
-            (65, 25, 0, 1.20, 0.0),      # oranges burn
-            (108, 26, 0, 1.15, 0.0),     # yellows blaze
-            (135, 30, -10, 1.20, 0.05),  # greens to grass
-            (205, 30, 10, 0.85, 0.0),    # cyan stays light
-            (255, 30, -4, 1.10, 0.20),   # blues to electric
-        ],
-        chroma_curve=[(0, 0.85), (0.3, 1.15), (0.6, 1.20), (0.85, 0.95), (1, 0.5)],
-        density=0.12,
-        tint_a=[(0, 0.0), (0.15, -0.002), (0.6, 0.002), (0.85, 0.002), (1, 0.0)],
-        tint_b=[(0, 0.0), (0.15, -0.008), (0.35, -0.004), (0.6, 0.008), (0.85, 0.012), (1, 0.002)],
-        skin_hue=55,
-        skin_saturation=0.95,
-    )
-
-
-def soot(rgb):
-    """Black and white after pushed Tri-X with an orange filter: inky blacks, bright midtones, a long hard shoulder."""
-    mono = to_encoded(to_linear(rgb) @ np.array([0.46, 0.50, 0.04]))
-    y = curve([(0, 0), (0.1, 0.02), (0.25, 0.13), (0.5, 0.49), (0.75, 0.84), (0.9, 0.96), (1, 1)])(mono)
+def graphite(rgb):
+    """Black and white after Tri-X with a red-filter lean: long toe, bright midtones, dark skies."""
+    mono = to_encoded(to_linear(rgb) @ np.array([0.36, 0.56, 0.08]))
+    y = curve([(0, 0.016), (0.1, 0.055), (0.25, 0.195), (0.5, 0.530), (0.75, 0.815), (0.9, 0.930), (1, 0.978)])(mono)
     return np.stack([y, y, y], axis=-1)
 
 
-LOOKS = {
-    "honey": honey,
-    "noon": noon,
-    "mist": mist,
-    "reef": reef,
-    "lantern": lantern,
-    "attic": attic,
-    "riot": riot,
-    "soot": soot,
-}
+LOOKS = {"kiln": kiln, "fjord": fjord, "cinder": cinder, "salt": salt, "graphite": graphite}
 
 
 def build_cube(look):
