@@ -87,9 +87,9 @@ enum ClaudeScanner {
     Stay honest about what the camera can do:
     - Only pick what is visible and has real detail. In a dark scene, build the picture from the lights \
     and the shapes they reveal; don't pick anything lost in black.
-    - The lenses are sharpest at about 50%, 25% and 12% of the image's width (the 1x, 2x and 4x lenses). \
-    Prefer a box near one of these when it suits the picture, and don't go narrower than 12% unless \
-    the subject truly needs it. Distant detail gets soft.
+    - The request gives the box widths where the lenses are sharpest. Prefer a box near one of these \
+    when it suits the picture, and don't go narrower than the narrowest unless the subject truly needs \
+    it. Distant detail gets soft.
     - Your friend can't move what's in the scene. A ceiling, a wall or a floor stays dull however it's \
     framed, so when a view is truly plain, give your best box and use the tip to say where better light \
     looks to be.
@@ -124,11 +124,12 @@ enum ClaudeScanner {
         let request = """
         This image is \(frame.width)x\(frame.height) pixels. The box must be \(ratio.rawValue) (width to \
         height), so its height is \(tallness) times its width. It can be from \(frame.width / 10) to \
-        \(widest) pixels wide and must stay inside the image.
+        \(widest) pixels wide and must stay inside the image. The lenses are sharpest at about \(widest / 2), \
+        \(widest / 4) and \(widest / 8) pixels wide (the 1x, 2x and 4x lenses).
         """
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
-            "max_tokens": 24000,
+            "max_tokens": 16000,
             "fallbacks": "default",
             "output_config": [
                 "effort": "high",
@@ -152,7 +153,7 @@ enum ClaudeScanner {
         ]
 
         // Claude thinks about the picture first, which takes a while at this effort.
-        var urlRequest = URLRequest(url: endpoint, timeoutInterval: 150)
+        var urlRequest = URLRequest(url: endpoint, timeoutInterval: 300)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")

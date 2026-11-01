@@ -408,7 +408,9 @@ final class PhotoDeveloper {
         }
         if settings[.sharpness] != 0 {
             result = result.applyingFilter("CISharpenLuminance", parameters: [
-                kCIInputSharpnessKey: settings[.sharpness] / 100
+                kCIInputSharpnessKey: settings[.sharpness] / 100,
+                // Scales with the photo, so the saved file looks as sharp as the preview.
+                kCIInputRadiusKey: 1.69 * max(image.extent.width, image.extent.height) / CGFloat(previewLongEdge)
             ])
         }
         return result.cropped(to: image.extent)
@@ -420,7 +422,7 @@ final class PhotoDeveloper {
         for (index, level) in levels.enumerated() {
             parameters["inputPoint\(index)"] = CIVector(x: CGFloat(index) / 4, y: CGFloat(level))
         }
-        return image.applyingFilter("CIToneCurve", parameters: parameters)
+        return image.applyingFilter("CIToneCurve", parameters: parameters).cropped(to: image.extent)
     }
 
     /// Lifts the blacks and pulls the whites down, like an old print.
@@ -450,8 +452,7 @@ final class PhotoDeveloper {
                 "inputBVector": CIVector(x: 0, y: 0, z: strength * 0.4, w: 0)
             ])
         return bloom
-            .applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: image])
-            .settingAlphaOne(in: image.extent)
+            .applyingFilter("CIScreenBlendMode", parameters: [kCIInputBackgroundImageKey: image])
             .cropped(to: image.extent)
     }
 

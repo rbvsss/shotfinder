@@ -54,11 +54,6 @@ struct GuideProjection {
     /// How much of the crop the shot covers. 1 means it fills the frame exactly.
     let fill: Double
 
-    /// Whether part of the shot's frame reaches past the viewfinder, hiding some of its corners.
-    var overflowsView: Bool {
-        x - width / 2 < 0 || x + width / 2 > 1 || y - height / 2 < 0 || y + height / 2 > 1
-    }
-
     /// Whether the middle of the shot is somewhere inside the viewfinder.
     var isInView: Bool {
         x >= 0 && x <= 1 && y >= 0 && y <= 1

@@ -7,7 +7,7 @@ enum Theme {
     static let keyline = Color.black.opacity(0.75)
     /// The background of controls and empty slots on the black area below the viewfinder.
     static let control = Color.white.opacity(0.14)
-    /// The one colour in the app, for whatever is on or selected.
+    /// The accent, for whatever is on or selected.
     static let accent = Color(red: 1, green: 0.839, blue: 0.039)
     /// The yellow, thinned to sit behind a lit button or lens.
     static let accentWash = accent.opacity(0.22)

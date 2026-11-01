@@ -210,7 +210,7 @@ struct ContentView: View {
                 .padding(.bottom, 10)
 
             controls
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 48)
                 .padding(.bottom, 8)
         }
     }
@@ -318,6 +318,7 @@ struct ContentView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
+                .foregroundStyle(.white)
                 .frame(width: 56, height: 44)
                 .contentShape(Rectangle())
             }
@@ -330,7 +331,8 @@ struct ContentView: View {
                 showingSettings = true
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 20)
+        .padding(.trailing, 12)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 
@@ -389,6 +391,11 @@ struct ContentView: View {
     private func touchGesture(in size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                // A touch the system cancelled never ended, so a new starting point replaces it.
+                if let stale = touch, stale.start != value.startLocation {
+                    stale.holdTask.cancel()
+                    touch = nil
+                }
                 var current = touch ?? beginTouch(at: value.startLocation, in: size)
                 let distance = hypot(value.translation.width, value.translation.height)
                 if distance > Self.touchSlop || pinchStartZoom != nil {
@@ -428,7 +435,7 @@ struct ContentView: View {
             camera.lockFocus(atX: location.x / size.width, y: location.y / size.height)
             withAnimation(Theme.quick) { focusPoint = location }
         }
-        return ViewfinderTouch(startExposure: camera.tapExposure, holdTask: hold)
+        return ViewfinderTouch(start: location, startExposure: camera.tapExposure, holdTask: hold)
     }
 
     private var pinchGesture: some Gesture {
@@ -493,10 +500,10 @@ struct ContentView: View {
         ZStack {
             Circle()
                 .stroke(Color.white, lineWidth: 4)
-                .frame(width: 76, height: 76)
+                .frame(width: 68, height: 68)
             Circle()
                 .fill(Color.white)
-                .frame(width: 64, height: 64)
+                .frame(width: 56, height: 56)
                 .scaleEffect(shutterHeld ? 0.9 : 1)
                 .animation(Theme.quick, value: shutterHeld)
         }
@@ -573,6 +580,9 @@ struct ContentView: View {
     private func handle(_ phase: ScenePhase) {
         switch phase {
         case .background:
+            countdownTask?.cancel()
+            countdownTask = nil
+            countdown = nil
             // Turns made while the app is away can't be measured, so the guide would be wrong.
             stopGuiding()
             motion.stop()
@@ -744,6 +754,7 @@ struct ContentView: View {
 
     /// One finger on the viewfinder, from touch down until it lifts.
     private struct ViewfinderTouch {
+        let start: CGPoint
         let startExposure: Float
         let holdTask: Task<Void, Never>
         var hasMoved = false

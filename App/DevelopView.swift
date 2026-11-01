@@ -135,7 +135,6 @@ struct DevelopView: View {
                                     .offset(x: -3, y: 3)
                             }
                         }
-                        .frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -143,6 +142,8 @@ struct DevelopView: View {
                 .accessibilityAddTraits(tab == option ? .isSelected : [])
             }
         }
+        .padding(3)
+        .background(Theme.control.opacity(0.5), in: Capsule())
     }
 
     private func isChanged(_ tab: Tab) -> Bool {
@@ -166,23 +167,30 @@ struct DevelopView: View {
 
     private var looksPanel: some View {
         VStack(spacing: 8) {
-            Spacer(minLength: 0)
-
-            if showingLookStrength, settings.look != .natural {
+            if showingStrength {
                 RulerSlider(title: settings.look.title, value: $settings.lookStrength, range: 0...100, resetValue: 100)
                     .padding(.horizontal, 16)
                     .transition(.opacity)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(Look.allCases) { look in
-                        lookButton(look)
+            ScrollViewReader { reader in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Look.allCases) { look in
+                            lookButton(look)
+                        }
                     }
+                    .padding(.horizontal, 16)
                 }
-                .padding(.horizontal, 16)
+                .onAppear {
+                    reader.scrollTo(settings.look.id, anchor: .center)
+                }
             }
         }
+    }
+
+    private var showingStrength: Bool {
+        showingLookStrength && settings.look != .natural
     }
 
     private func lookButton(_ look: Look) -> some View {
@@ -206,7 +214,7 @@ struct DevelopView: View {
                         Theme.control
                     }
                 }
-                .frame(width: showingLookStrength ? 52 : 66, height: showingLookStrength ? 58 : 82)
+                .frame(width: showingStrength ? 52 : 66, height: showingStrength ? 58 : 82)
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay {
                     if isSelected {
@@ -235,8 +243,6 @@ struct DevelopView: View {
 
     private func dialPanel(_ dials: [Dial], selection: Binding<Dial>) -> some View {
         VStack(spacing: 14) {
-            Spacer(minLength: 0)
-
             RulerSlider(title: selection.wrappedValue.title, value: $settings[selection.wrappedValue], range: selection.wrappedValue.range)
                 .id(selection.wrappedValue)
                 .padding(.horizontal, 16)
@@ -261,7 +267,8 @@ struct DevelopView: View {
                 Image(systemName: dial.symbol)
                     .font(.subheadline)
                     .foregroundStyle(settings[dial] != 0 ? Theme.accent : Color.white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.control, in: Circle())
                     .overlay {
                         Circle().strokeBorder(isSelected ? Color.white : Color.clear, lineWidth: 1)
                     }
@@ -270,7 +277,7 @@ struct DevelopView: View {
                     .lineLimit(1)
                     .foregroundStyle(isSelected ? Color.white : Color.secondary)
             }
-            .frame(width: 58)
+            .frame(width: 62)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -281,8 +288,6 @@ struct DevelopView: View {
 
     private var framesPanel: some View {
         VStack(spacing: 14) {
-            Spacer(minLength: 0)
-
             HStack(spacing: 0) {
                 ForEach(PhotoFrame.allCases) { frame in
                     frameButton(frame)
@@ -324,14 +329,16 @@ struct DevelopView: View {
 
     private var actions: some View {
         HStack(spacing: 8) {
-            Button("Delete") {
+            Button {
                 confirmingDelete = true
+            } label: {
+                Text("Delete")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 112, height: 46)
+                    .background(Theme.control, in: Capsule())
+                    .contentShape(Capsule())
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 24)
-            .frame(height: 46)
-            .background(Theme.control, in: Capsule())
             .confirmationDialog("Delete this photo?", isPresented: $confirmingDelete) {
                 Button("Delete Photo", role: .destructive, action: onDiscard)
             }
@@ -382,7 +389,7 @@ struct DevelopView: View {
     }
 
     private var canRedo: Bool {
-        historyIndex < history.count - 1
+        historyIndex < history.count - 1 && history[historyIndex] == settings
     }
 
     private func recordHistory() {
@@ -477,7 +484,9 @@ struct DevelopView: View {
         isSaving = true
         message = nil
         let current = settings
-        let thumbnail = preview?.preparingThumbnail(of: CGSize(width: 160, height: 200))
+        let thumbnail = preview.flatMap { shown in
+            shown.preparingThumbnail(of: CGSize(width: 160, height: 160 * shown.size.height / shown.size.width))
+        }
         Task {
             do {
                 try await developer.save(current)
@@ -513,6 +522,11 @@ private struct FrameTile: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay {
+            // Keeps the dark Film frame visible against the black screen.
+            RoundedRectangle(cornerRadius: 3)
+                .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+        }
         .accessibilityHidden(true)
     }
 }
@@ -540,7 +554,7 @@ private struct RulerSlider: View {
             .font(.footnote)
 
             GeometryReader { geometry in
-                ticks(width: geometry.size.width)
+                ticks
                     .contentShape(Rectangle())
                     .gesture(drag(width: geometry.size.width))
                     .onTapGesture(count: 2) {
@@ -557,7 +571,7 @@ private struct RulerSlider: View {
         }
     }
 
-    private func ticks(width: CGFloat) -> some View {
+    private var ticks: some View {
         let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
         return Canvas { context, size in
             for index in 0..<Self.tickCount {
@@ -567,7 +581,8 @@ private struct RulerSlider: View {
                 let tick = CGRect(x: x - 0.5, y: (size.height - height) / 2, width: 1, height: height)
                 context.fill(Path(tick), with: .color(Color.white.opacity(isMajor ? 0.55 : 0.3)))
             }
-            let marker = CGRect(x: size.width * fraction - 1.5, y: 0, width: 3, height: size.height)
+            // Inset, so the marker stays whole at either end.
+            let marker = CGRect(x: (size.width - 3) * fraction, y: 0, width: 3, height: size.height)
             context.fill(Path(roundedRect: marker, cornerRadius: 1.5), with: .color(Theme.accent))
         }
     }

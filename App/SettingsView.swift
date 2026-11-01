@@ -44,7 +44,6 @@ struct SettingsView: View {
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(Color.black)
         // A swipe away shouldn't lose a key you just pasted. Done saves it.
         .interactiveDismissDisabled(apiKey != savedKey)
     }
