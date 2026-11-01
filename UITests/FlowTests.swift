@@ -64,6 +64,22 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["Zoom .5x"].exists)
         shoot("e2e-01-idle")
 
+        func report(_ step: String) {
+            sleep(1)
+            let labels = app.buttons.allElementsBoundByIndex.prefix(3).map { "\($0.label) \($0.frame)" }
+            print("BUTTONS", step, labels)
+        }
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let flash = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Flash'")).firstMatch
+        report("start")
+        flash.tap(); report("button tap")
+        flash.press(forDuration: 0.4); report("button press")
+        origin.withOffset(CGVector(dx: 38, dy: 31)).tap(); report("point 38,31")
+        origin.withOffset(CGVector(dx: 38, dy: 50)).tap(); report("point 38,50")
+        origin.withOffset(CGVector(dx: 38, dy: 12)).tap(); report("point 38,12")
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Night'")).firstMatch.tap(); report("night")
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Aspect'")).firstMatch.tap(); report("aspect")
+        shoot("dbg-top")
         app.buttons["Flash, Off"].tap()
         XCTAssertTrue(app.buttons["Flash, Auto"].waitForExistence(timeout: 2))
         app.buttons["Flash, Auto"].tap()
