@@ -72,6 +72,7 @@ struct ContentView: View {
                 DevelopView(
                     photo: photo,
                     ratio: ratio,
+                    suggestedLook: motion.target?.look,
                     onSaved: { thumbnail in
                         withAnimation(.snappy(duration: 0.25)) { lastPhoto = thumbnail }
                         try? thumbnail?.jpegData(compressionQuality: 0.8)?.write(to: Self.lastPhotoURL)
@@ -137,6 +138,12 @@ struct ContentView: View {
                 camera.zoom(to: lens, rate: 2.5)
             }
         }
+        .onChange(of: ratio) { _, _ in
+            // The shot was framed for the old ratio.
+            if !isIdle {
+                stopGuiding()
+            }
+        }
         .onChange(of: camera.capturedPhoto?.id) { _, id in
             keepCameraRunning(whileDeveloping: id != nil)
         }
@@ -193,6 +200,8 @@ struct ContentView: View {
 
             viewfinder
 
+            Spacer(minLength: 0)
+
             HintView(
                 motion: motion,
                 isScanning: isScanning,
@@ -201,17 +210,15 @@ struct ContentView: View {
                 isDark: camera.isDarkScene && !camera.isNightOn
             )
             .frame(minHeight: 40)
-            .padding(.top, 6)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 0)
 
             LensRow(camera: camera, motion: motion, iconAngle: iconAngle)
-                .padding(.bottom, 10)
 
             controls
                 .padding(.horizontal, 48)
-                .padding(.bottom, 8)
+                .padding(.bottom, -6)
         }
     }
 
@@ -291,8 +298,6 @@ struct ContentView: View {
                 .padding(.trailing, 8)
                 .contentShape(Rectangle())
             }
-            .disabled(!isIdle)
-            .opacity(isIdle ? 1 : 0.35)
             .accessibilityLabel("Aspect, \(ratio.rawValue)")
             .popover(isPresented: $showingRatioMenu) {
                 RatioMenu(ratio: $ratio, isPresented: $showingRatioMenu)
@@ -500,10 +505,10 @@ struct ContentView: View {
         ZStack {
             Circle()
                 .stroke(Color.white, lineWidth: 4)
-                .frame(width: 68, height: 68)
+                .frame(width: 72, height: 72)
             Circle()
                 .fill(Color.white)
-                .frame(width: 56, height: 56)
+                .frame(width: 60, height: 60)
                 .scaleEffect(shutterHeld ? 0.9 : 1)
                 .animation(Theme.quick, value: shutterHeld)
         }
@@ -725,14 +730,15 @@ struct ContentView: View {
             do {
                 try await Task.sleep(nanoseconds: Self.lensSettleDelay)
                 let frame = try await camera.captureScanFrame { [motion] in motion.mark() }
-                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, apiKey: apiKey)
+                let scanLens = camera.displayZoom(forFactor: frame.zoomFactor)
+                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, scanLens: scanLens, apiKey: apiKey)
                 try Task.checkCancellation()
                 guard let optics = camera.optics else { throw ScanError.badResponse }
                 let target = ScanTarget(
                     result: result,
                     optics: optics,
                     scanZoomFactor: frame.zoomFactor,
-                    scanLens: camera.displayZoom(forFactor: frame.zoomFactor),
+                    scanLens: scanLens,
                     ratio: scanRatio
                 )
                 withAnimation(Theme.quick) {
@@ -787,7 +793,7 @@ private struct HintView: View {
             if let message {
                 Text(message)
             } else if isScanning {
-                Text(scanIsSlow ? "Still looking" : "Looking for a shot")
+                Text(scanIsSlow ? "Still looking…" : "Finding your shot…")
                     .foregroundStyle(Theme.accent)
             } else if let target = motion.target {
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)

@@ -20,7 +20,7 @@ struct LiveGuide: View {
     }
 }
 
-/// The box around the shot, a dashed line from the middle of the view to it, the level, and the shot's name.
+/// The box around the shot, a dashed line to it from a crosshair fixed mid-view, the level, and the shot's name.
 struct GuideOverlay: View {
     let roll: Double
     let showsLevel: Bool
@@ -33,6 +33,8 @@ struct GuideOverlay: View {
     private static let levelTolerance = 1.5 * Double.pi / 180
     /// How far off the view the dashed line is drawn, so a shot far away can't make a huge path.
     private static let lineReach = 3.0
+    /// The space the dashed line leaves around the crosshair.
+    private static let lineGap: CGFloat = 14
 
     var body: some View {
         GeometryReader { geometry in
@@ -51,15 +53,17 @@ struct GuideOverlay: View {
                     }
                     .frame(width: projection.width * size.width, height: projection.height * size.height)
                     .position(x: projection.x * size.width, y: projection.y * size.height)
-
-                    crossMark
-                        .position(x: projection.x * size.width, y: projection.y * size.height)
                 }
 
                 if showsLevel, abs(tilt) < Self.levelRange {
-                    levelLine(width: size.width * 0.32)
+                    levelLine(width: size.width * 0.4)
                         .rotationEffect(.radians(-quarterTurn))
                         .shadow(color: Theme.keyline, radius: 1)
+                        .position(x: size.width / 2, y: size.height / 2)
+                }
+
+                if label != nil {
+                    crosshair
                         .position(x: size.width / 2, y: size.height / 2)
                 }
 
@@ -76,26 +80,34 @@ struct GuideOverlay: View {
 
     private func dashedLine(to projection: GuideProjection, in size: CGSize) -> some View {
         let reach = Self.lineReach
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
         let end = CGPoint(
             x: min(max(projection.x, -reach), reach) * size.width,
             y: min(max(projection.y, -reach), reach) * size.height
         )
+        let length = hypot(end.x - center.x, end.y - center.y)
         return Path { path in
-            path.move(to: CGPoint(x: size.width / 2, y: size.height / 2))
+            guard length > Self.lineGap else { return }
+            let lead = Self.lineGap / length
+            path.move(to: CGPoint(x: center.x + (end.x - center.x) * lead, y: center.y + (end.y - center.y) * lead))
             path.addLine(to: end)
         }
-        .stroke(Theme.accent, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+        .stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [6, 6]))
     }
 
-    private var crossMark: some View {
-        Path { path in
-            path.move(to: CGPoint(x: 6, y: 0))
-            path.addLine(to: CGPoint(x: 6, y: 12))
-            path.move(to: CGPoint(x: 0, y: 6))
-            path.addLine(to: CGPoint(x: 12, y: 6))
+    /// Stays in the middle of the view while guiding, and turns green when the shot is lined up.
+    private var crosshair: some View {
+        let cross = Path { path in
+            path.move(to: CGPoint(x: 10, y: 0))
+            path.addLine(to: CGPoint(x: 10, y: 20))
+            path.move(to: CGPoint(x: 0, y: 10))
+            path.addLine(to: CGPoint(x: 20, y: 10))
         }
-        .stroke(Theme.accent, lineWidth: 1.5)
-        .frame(width: 12, height: 12)
+        return ZStack {
+            cross.stroke(Theme.keyline, lineWidth: 3)
+            cross.stroke(isAligned ? Color.green : Theme.accent, lineWidth: 1.5)
+        }
+        .frame(width: 20, height: 20)
     }
 
     private func pill(_ label: String) -> some View {
@@ -108,7 +120,7 @@ struct GuideOverlay: View {
                 pillDivider
                 Text("Ready")
                     .foregroundStyle(Theme.accent)
-            } else if let projection, !projection.isInView {
+            } else if let projection {
                 pillDivider
                 Image(systemName: "arrow.up")
                     .foregroundStyle(.white)
@@ -116,9 +128,9 @@ struct GuideOverlay: View {
                     .accessibilityHidden(true)
             }
         }
-        .font(.footnote.weight(.medium))
-        .padding(.horizontal, 14)
-        .frame(height: 32)
+        .font(.subheadline.weight(.medium))
+        .padding(.horizontal, 16)
+        .frame(height: 34)
         .background(Theme.pill, in: Capsule())
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
@@ -141,16 +153,9 @@ struct GuideOverlay: View {
     @ViewBuilder
     private func levelLine(width: CGFloat) -> some View {
         if abs(tilt) < Self.levelTolerance {
-            ZStack {
-                Capsule()
-                    .fill(Theme.accent)
-                    .frame(width: width, height: 1.5)
-                if isAligned {
-                    Capsule()
-                        .fill(Color.green)
-                        .frame(width: 1.5, height: 10)
-                }
-            }
+            Capsule()
+                .fill(Theme.accent)
+                .frame(width: width, height: 1.5)
         } else {
             HStack(spacing: 6) {
                 Capsule().frame(width: width * 0.14, height: 1.5)

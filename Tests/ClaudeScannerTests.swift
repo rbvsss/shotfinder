@@ -51,9 +51,9 @@ final class ClaudeScannerTests: XCTestCase {
         URLProtocol.unregisterClass(StubProtocol.self)
     }
 
-    private func scan() async throws -> ScanResult {
+    private func scan(scanLens: Double = 0.5) async throws -> ScanResult {
         let frame = ScanFrame(jpeg: Data([1, 2, 3]), width: 900, height: 1200, zoomFactor: 1)
-        return try await ClaudeScanner.scan(frame: frame, ratio: .square, apiKey: "test-key")
+        return try await ClaudeScanner.scan(frame: frame, ratio: .square, scanLens: scanLens, apiKey: "test-key")
     }
 
     private func assertFails(status: Int, json: String, matching check: (ScanError) -> Bool) async {
@@ -69,62 +69,61 @@ final class ClaudeScannerTests: XCTestCase {
         }
     }
 
-    private func answer(x1: Double, y1: Double, x2: Double, y2: Double) -> Data {
-        let shot = #"{\"label\":\"old barn\",\"tip\":\"Step left\",\"x1\":\#(x1),\"y1\":\#(y1),\"x2\":\#(x2),\"y2\":\#(y2)}"#
+    private func answer(x: Double, y: Double, lens: String) -> Data {
+        let shot = #"{\"label\":\"old barn\",\"tip\":\"Step left.\",\"x\":\#(x),\"y\":\#(y),\"lens\":\"\#(lens)\",\"look\":\"honey\"}"#
         return Data(#"""
         {"content":[{"type":"thinking","thinking":""},{"type":"text","text":"\#(shot)"}],"stop_reason":"end_turn"}
         """#.utf8)
     }
 
     func testConvertsPixelsToFractionsPastOtherBlocks() async throws {
-        StubProtocol.body = answer(x1: 180, y1: 480, x2: 540, y2: 840)
+        StubProtocol.body = answer(x: 360, y: 660, lens: "1.5")
 
         let result = try await scan()
 
         XCTAssertEqual(result.label, "old barn")
+        XCTAssertEqual(result.look, .honey)
         XCTAssertEqual(result.centerX, 0.4, accuracy: 0.0001)
         XCTAssertEqual(result.centerY, 0.55, accuracy: 0.0001)
-        XCTAssertEqual(result.size, 0.4, accuracy: 0.0001)
     }
 
-    func testShotGrowsToHoldABoxOfTheWrongShape() async throws {
-        StubProtocol.body = answer(x1: 300, y1: 200, x2: 500, y2: 800)
+    func testLensSetsTheFrameSize() async throws {
+        StubProtocol.body = answer(x: 450, y: 600, lens: "2")
 
         let result = try await scan()
 
-        // 600 of 1200 pixels tall needs two thirds of the square crop's 0.75 height.
-        XCTAssertEqual(result.size, 2.0 / 3.0, accuracy: 0.0001)
+        XCTAssertEqual(result.size, 0.25, accuracy: 0.0001)
     }
 
-    func testOversizedBoxFillsTheCropAndStaysInTheImage() async throws {
-        StubProtocol.body = answer(x1: 0, y1: 0, x2: 900, y2: 1200)
+    func testLensWiderThanTheScanFillsTheCropAndStaysInTheImage() async throws {
+        StubProtocol.body = answer(x: 10, y: 10, lens: "0.7")
 
-        let result = try await scan()
+        let result = try await scan(scanLens: 1)
 
-        // The square crop can't be taller than three quarters of the image.
         XCTAssertEqual(result.size, 1, accuracy: 0.0001)
         XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
-        XCTAssertEqual(result.centerY, 0.5, accuracy: 0.0001)
-    }
-
-    func testFrameNearAnEdgeIsPulledInsideTheImage() async throws {
-        StubProtocol.body = answer(x1: 0, y1: 0, x2: 100, y2: 900)
-
-        let result = try await scan()
-
-        XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
+        // The square crop is three quarters of the image's height.
         XCTAssertEqual(result.centerY, 0.375, accuracy: 0.0001)
     }
 
-    func testEmptyBoxIsRejected() async {
-        await assertFails(status: 200, json: String(decoding: answer(x1: 500, y1: 500, x2: 400, y2: 400), as: UTF8.self)) {
+    func testFrameNearAnEdgeIsPulledInsideTheImage() async throws {
+        StubProtocol.body = answer(x: 0, y: 1200, lens: "1")
+
+        let result = try await scan()
+
+        XCTAssertEqual(result.centerX, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 1 - 0.1875, accuracy: 0.0001)
+    }
+
+    func testUnknownLensIsRejected() async {
+        await assertFails(status: 200, json: String(decoding: answer(x: 500, y: 500, lens: "wide"), as: UTF8.self)) {
             if case .badResponse = $0 { return true }
             return false
         }
     }
 
     func testSendsTheDocumentedRequest() async throws {
-        StubProtocol.body = answer(x1: 100, y1: 100, x2: 500, y2: 500)
+        StubProtocol.body = answer(x: 300, y: 300, lens: "2")
 
         _ = try await scan()
 
@@ -135,9 +134,12 @@ final class ClaudeScannerTests: XCTestCase {
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody)) as? [String: Any])
         XCTAssertEqual(body["model"] as? String, "claude-opus-5-5")
         XCTAssertEqual(body["fallbacks"] as? String, "default")
+        XCTAssertEqual((body["output_config"] as? [String: Any])?["effort"] as? String, "low")
         XCTAssertNil(body["thinking"])
         XCTAssertNil(body["temperature"])
-        XCTAssertTrue(String(decoding: try XCTUnwrap(StubProtocol.lastBody), as: UTF8.self).contains("900x1200 pixels"))
+        let sent = String(decoding: try XCTUnwrap(StubProtocol.lastBody), as: UTF8.self)
+        XCTAssertTrue(sent.contains("900x1200 pixels"))
+        XCTAssertTrue(sent.contains("2: 225x225"), "The request should list each lens's frame")
     }
 
     func testBadKey() async {

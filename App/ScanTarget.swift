@@ -5,6 +5,7 @@ import simd
 struct ScanTarget {
     let label: String
     let tip: String
+    let look: Look
     /// Direction of the shot in the phone's coordinates at the moment of the scan.
     let ray: SIMD3<Double>
     /// The shot's size relative to the whole crop at the zoom it was scanned at.
@@ -19,6 +20,7 @@ struct ScanTarget {
         let scale = min(max(result.size / Double(ratio.cropInViewfinder.width), 0.1), 1)
         label = result.label.lowercased()
         tip = result.tip
+        look = result.look
         self.scale = scale
         self.scanZoomFactor = scanZoomFactor
         lens = scanLens / scale
@@ -54,11 +56,6 @@ struct GuideProjection {
     /// How much of the crop the shot covers. 1 means it fills the frame exactly.
     let fill: Double
 
-    /// Whether the middle of the shot is somewhere inside the viewfinder.
-    var isInView: Bool {
-        x >= 0 && x <= 1 && y >= 0 && y <= 1
-    }
-
     var isCentered: Bool {
         hypot(x - 0.5, y - 0.5) < 0.04
     }
@@ -71,8 +68,8 @@ struct GuideProjection {
         hypot(x - 0.5, y - 0.5) < 0.055 && fill > 0.8 && fill < 1.2
     }
 
-    /// Whether the shot would still be near the middle after zooming in by this much.
+    /// Whether the shot would still be well inside the view after zooming in by this much.
     func staysCentered(afterZooming growth: Double) -> Bool {
-        growth > 1 && hypot(x - 0.5, y - 0.5) * growth < 0.08
+        growth > 1 && hypot(x - 0.5, y - 0.5) * growth < 0.25
     }
 }

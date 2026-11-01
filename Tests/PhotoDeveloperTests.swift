@@ -143,6 +143,36 @@ final class PhotoDeveloperTests: XCTestCase {
         return pixel.map(Int.init)
     }
 
+    func testPrintFrameIsWhiteOutsideAndRoughInside() throws {
+        var settings = DevelopSettings()
+        settings.frame = .print
+        let image = try XCTUnwrap(developer().renderPreview(settings)?.cgImage)
+        let context = try XCTUnwrap(CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: image.width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+
+        // Rows across the left edge: the border is white, and how deep it goes varies along the edge.
+        var depths = Set<Int>()
+        for row in stride(from: image.height / 10, to: image.height * 9 / 10, by: 8) {
+            let line = pixels + row * image.width
+            XCTAssertGreaterThan(line[1], 240)
+            var depth = 0
+            while depth < image.width / 8, line[depth] > 240 {
+                depth += 1
+            }
+            depths.insert(depth)
+        }
+        XCTAssertGreaterThan(depths.count, 3, "The edge should wander, not run straight")
+    }
+
     func testPaperStaysLightWhateverIsApplied() throws {
         let ready = try developer()
         let look = try XCTUnwrap(Look.allCases.first { $0 != .natural })

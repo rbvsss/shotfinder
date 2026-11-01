@@ -4,6 +4,8 @@ import SwiftUI
 struct DevelopView: View {
     let photo: CapturedPhoto
     let ratio: CaptureRatio
+    /// The look Claude picked for the shot this photo was guided to.
+    let suggestedLook: Look?
     let onSaved: (_ thumbnail: UIImage?) -> Void
     let onDiscard: () -> Void
 
@@ -18,7 +20,7 @@ struct DevelopView: View {
     /// How long a change must rest before it becomes a step in the undo history.
     private static let historyDelay: UInt64 = 400_000_000
 
-    @AppStorage("develop.style") private var savedStyle = Data()
+    @AppStorage("develop.startingStyle") private var savedStyle = Data()
 
     @State private var developer: PhotoDeveloper?
     @State private var settings = DevelopSettings()
@@ -185,6 +187,9 @@ struct DevelopView: View {
                 .onAppear {
                     reader.scrollTo(settings.look.id, anchor: .center)
                 }
+                .onChange(of: settings.look) { _, look in
+                    withAnimation(Theme.quick) { reader.scrollTo(look.id, anchor: .center) }
+                }
             }
         }
     }
@@ -214,7 +219,7 @@ struct DevelopView: View {
                         Theme.control
                     }
                 }
-                .frame(width: showingStrength ? 52 : 66, height: showingStrength ? 58 : 82)
+                .frame(width: showingStrength ? 52 : 72, height: showingStrength ? 58 : 94)
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay {
                     if isSelected {
@@ -413,7 +418,11 @@ struct DevelopView: View {
     }
 
     private func loadStyle() {
-        settings = (try? JSONDecoder().decode(DevelopSettings.self, from: savedStyle)) ?? DevelopSettings()
+        settings = (try? JSONDecoder().decode(DevelopSettings.self, from: savedStyle)) ?? DevelopSettings.first
+        if let suggestedLook {
+            settings.look = suggestedLook
+            settings.lookStrength = 100
+        }
         history = [settings]
         historyIndex = 0
     }
