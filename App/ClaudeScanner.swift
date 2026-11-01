@@ -101,7 +101,7 @@ enum ClaudeScanner {
             "max_tokens": 16000,
             "fallbacks": "default",
             "output_config": [
-                "effort": "low",
+                "effort": "medium",
                 "format": ["type": "json_schema", "schema": schema]
             ],
             "system": systemPrompt,

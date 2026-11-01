@@ -48,28 +48,104 @@ final class FlowTests: XCTestCase {
         shoot("large-text-develop")
     }
 
-    func testIdleAndOptions() throws {
+    private func openControls() {
+        app.buttons["Controls"].tap()
+        XCTAssertTrue(app.buttons["Grid, Off"].waitForExistence(timeout: 3) || app.buttons["Grid, On"].exists)
+    }
+
+    private func closeControls() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        XCTAssertTrue(app.buttons["Controls"].waitForExistence(timeout: 3))
+        sleep(1)
+    }
+
+    func testTopButtonsAndControlsPanel() throws {
         try launch()
         XCTAssertTrue(app.buttons["Zoom .5x"].exists)
         shoot("e2e-01-idle")
 
-        app.buttons["Options"].tap()
-        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 3))
-        shoot("e2e-02-menu")
+        app.buttons["Flash, Off"].tap()
+        XCTAssertTrue(app.buttons["Flash, Auto"].waitForExistence(timeout: 2))
+        app.buttons["Flash, Auto"].tap()
+        app.buttons["Flash, On"].tap()
+        XCTAssertTrue(app.buttons["Flash, Off"].waitForExistence(timeout: 2))
 
-        app.buttons["Aspect Ratio"].tap()
-        XCTAssertTrue(app.buttons["1:1"].waitForExistence(timeout: 3))
-        shoot("e2e-03-ratios")
-        app.buttons["1:1"].tap()
+        app.buttons["Night, Off"].tap()
+        XCTAssertTrue(app.buttons["Night, On"].waitForExistence(timeout: 2))
+        shoot("e2e-02-night-on")
+        app.buttons["Night, On"].tap()
+
+        openControls()
+        shoot("e2e-03-controls")
+
+        app.buttons["Grid, Off"].tap()
+        XCTAssertTrue(app.buttons["Grid, On"].waitForExistence(timeout: 2))
+        let exposure = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Exposure'")).firstMatch
+        exposure.tap()
+        XCTAssertTrue(app.sliders["Exposure"].waitForExistence(timeout: 2))
         sleep(1)
-        shoot("e2e-04-square")
+        shoot("e2e-04-exposure")
+        exposure.tap()
+        closeControls()
+        shoot("e2e-05-grid")
 
-        app.buttons["Options"].tap()
-        app.buttons["Flash"].tap()
-        XCTAssertTrue(app.buttons["On"].waitForExistence(timeout: 3))
-        app.buttons["On"].tap()
-        XCTAssertTrue(app.images["Flash on"].waitForExistence(timeout: 3) || app.otherElements["Flash on"].exists)
-        shoot("e2e-05-flash-on")
+        openControls()
+        app.buttons["Grid, On"].tap()
+        closeControls()
+
+        var guardCount = 0
+        while !app.buttons["Aspect, 1:1"].exists, guardCount < 5 {
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Aspect'")).firstMatch.tap()
+            guardCount += 1
+        }
+        XCTAssertTrue(app.buttons["Aspect, 1:1"].exists)
+        sleep(1)
+        shoot("e2e-06-square")
+        app.buttons["Aspect, 1:1"].tap()
+        app.buttons["Aspect, 9:16"].tap()
+        XCTAssertTrue(app.buttons["Aspect, 3:4"].waitForExistence(timeout: 2))
+    }
+
+    func testTapDragAndHoldOnTheViewfinder() throws {
+        try launch()
+        let viewfinder = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+
+        viewfinder.tap()
+        sleep(1)
+        shoot("e2e-07-focus")
+
+        viewfinder.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+        shoot("e2e-08-brighter")
+
+        viewfinder.press(forDuration: 1.2)
+        XCTAssertTrue(app.staticTexts["AE/AF LOCK"].waitForExistence(timeout: 3))
+        shoot("e2e-09-locked")
+
+        viewfinder.tap()
+        XCTAssertFalse(app.staticTexts["AE/AF LOCK"].waitForExistence(timeout: 1))
+    }
+
+    func testTimerCountsDownThenShoots() throws {
+        try launch()
+        openControls()
+        app.buttons["Timer, Off"].tap()
+        XCTAssertTrue(app.buttons["Timer, 3s"].waitForExistence(timeout: 2))
+        closeControls()
+
+        app.buttons["Take photo"].tap()
+        XCTAssertTrue(app.staticTexts["3"].waitForExistence(timeout: 2))
+        shoot("e2e-17-timer")
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 6))
+
+        app.buttons["Retake"].tap()
+        app.buttons["Discard Photo"].tap()
+        XCTAssertTrue(app.buttons["Controls"].waitForExistence(timeout: 4))
+
+        openControls()
+        app.buttons["Timer, 3s"].tap()
+        app.buttons["Timer, 10s"].tap()
+        XCTAssertTrue(app.buttons["Timer, Off"].waitForExistence(timeout: 2))
+        closeControls()
     }
 
     func testFullFlowFromScanToSave() throws {
