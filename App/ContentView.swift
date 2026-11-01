@@ -292,12 +292,13 @@ struct ContentView: View {
                             .resizable()
                             .scaledToFill()
                     } else {
-                        Theme.raised
+                        Color.clear
                     }
                 }
                 .frame(width: 52, height: 52)
                 .clipped()
             }
+            .disabled(lastPhoto == nil)
             .accessibilityLabel("Open Photos")
 
             Spacer()
