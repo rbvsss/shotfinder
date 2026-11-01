@@ -33,8 +33,7 @@ enum Look: String, CaseIterable, Identifiable, Codable {
         return result
     }()
 
-    /// `strength` runs from 0, the photo untouched, to 1, the full look.
-    func apply(to image: CIImage, strength: Double = 1) -> CIImage {
+    func apply(to image: CIImage) -> CIImage {
         guard let cube = Self.cubes[self], let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
             return image
         }
@@ -43,43 +42,37 @@ enum Look: String, CaseIterable, Identifiable, Codable {
         filter.cubeDimension = Float(Self.cubeSize)
         filter.cubeData = cube
         filter.colorSpace = colorSpace
-        guard let toned = filter.outputImage else { return image }
-        guard strength < 1 else { return toned }
-        let mix = CIFilter.mix()
-        mix.inputImage = toned
-        mix.backgroundImage = image
-        mix.amount = Float(strength)
-        return mix.outputImage ?? toned
+        return filter.outputImage ?? image
     }
 }
 
-enum PhotoFrame: String, CaseIterable, Identifiable, Codable {
-    case none, print, white, paper, film, info
+enum PhotoFrame: String, CaseIterable, Codable {
+    case none, print, white, paper
 
-    var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        self == .none ? "No Frame" : rawValue.capitalized
+    }
+
+    var next: PhotoFrame {
+        let all = Self.allCases
+        return all[((all.firstIndex(of: self) ?? 0) + 1) % all.count]
+    }
 
     /// Margins as fractions of the photo's short edge: sides, top, bottom.
-    var margins: (side: CGFloat, top: CGFloat, bottom: CGFloat) {
+    private var margins: (side: CGFloat, top: CGFloat, bottom: CGFloat) {
         switch self {
         case .none: return (0, 0, 0)
         case .print: return (0.016, 0.016, 0.016)
         case .white: return (0.06, 0.06, 0.06)
         case .paper: return (0.06, 0.06, 0.18)
-        case .film: return (0.045, 0.045, 0.045)
-        case .info: return (0.04, 0.04, 0.12)
         }
     }
 
-    var paper: (red: CGFloat, green: CGFloat, blue: CGFloat) {
-        switch self {
-        case .paper: return (0.96, 0.95, 0.92)
-        case .film: return (0.03, 0.03, 0.03)
-        default: return (1, 1, 1)
-        }
+    private var sheetColor: CIColor {
+        self == .paper ? CIColor(red: 0.96, green: 0.95, blue: 0.92) : .white
     }
 
-    func apply(to image: CIImage, specs: String) -> CIImage {
+    func apply(to image: CIImage) -> CIImage {
         guard self != .none else { return image }
         let short = min(image.extent.width, image.extent.height)
         let side = (margins.side * short).rounded()
@@ -95,32 +88,8 @@ enum PhotoFrame: String, CaseIterable, Identifiable, Codable {
             translationX: side - image.extent.minX,
             y: bottom - image.extent.minY
         ))
-        let sheet = CIImage(color: CIColor(red: paper.red, green: paper.green, blue: paper.blue)).cropped(to: canvas)
-        var framed = moved.composited(over: sheet)
-        if self == .film {
-            framed = roundedCorners(of: moved, radius: short * 0.012).composited(over: sheet)
-        } else if self == .print {
-            framed = roughEdges(of: moved).composited(over: sheet)
-        }
-        guard self == .info, !specs.isEmpty,
-              let line = PhotoCaption.textImage(specs, size: short * 0.024, color: UIColor(white: 0.25, alpha: 1)) else {
-            return framed
-        }
-        return line
-            .transformed(by: CGAffineTransform(
-                translationX: side - line.extent.minX,
-                y: (bottom - line.extent.height) / 2 - line.extent.minY
-            ))
-            .composited(over: framed)
-    }
-
-    private func roundedCorners(of image: CIImage, radius: CGFloat) -> CIImage {
-        let shape = CIFilter.roundedRectangleGenerator()
-        shape.extent = image.extent
-        shape.radius = Float(radius)
-        shape.color = .white
-        guard let mask = shape.outputImage else { return image }
-        return masked(image, by: mask)
+        let sheet = CIImage(color: sheetColor).cropped(to: canvas)
+        return (self == .print ? roughEdges(of: moved) : moved).composited(over: sheet)
     }
 
     /// Nibbles the photo's edges like a hand-printed sheet. The same on every render, so the preview matches the file.
@@ -169,7 +138,10 @@ enum PhotoFrame: String, CaseIterable, Identifiable, Codable {
             scaleX: image.extent.width / width,
             y: image.extent.height / height
         ).concatenating(CGAffineTransform(translationX: image.extent.minX, y: image.extent.minY)))
-        return masked(image, by: mask)
+        return image.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: CIImage(color: .clear).cropped(to: image.extent),
+            kCIInputMaskImageKey: mask
+        ])
     }
 
     /// Bumps from 0 to 1 at three sizes, so an edge wanders slowly and has fine tears.
@@ -185,136 +157,46 @@ enum PhotoFrame: String, CaseIterable, Identifiable, Codable {
         }
         return noise(cells: 9) * 0.5 + noise(cells: 40) * 0.3 + noise(cells: 160) * 0.2
     }
-
-    private func masked(_ image: CIImage, by mask: CIImage) -> CIImage {
-        image.applyingFilter("CIBlendWithMask", parameters: [
-            kCIInputBackgroundImageKey: CIImage(color: .clear).cropped(to: image.extent),
-            kCIInputMaskImageKey: mask
-        ])
-    }
 }
 
-/// A slider in the Adjust or Effects tab. Every value runs up to 100; centred ones go down to -100.
-enum Dial: String, CaseIterable, Identifiable, Codable {
-    case exposure, warmth, tint, contrast, highlights, shadows, saturation, sharpness
-    case grain, fade, glow, vignette
+enum GrainLevel: String, Codable {
+    case off, fine, heavy
 
-    static let adjustments: [Dial] = [.exposure, .warmth, .tint, .contrast, .highlights, .shadows, .saturation, .sharpness]
-    static let effects: [Dial] = [.grain, .fade, .glow, .vignette]
-
-    var id: String { rawValue }
-    var title: String { rawValue.capitalized }
-
-    var range: ClosedRange<Double> {
+    var title: String {
         switch self {
-        case .sharpness, .grain, .fade, .glow, .vignette: return 0...100
-        default: return -100...100
+        case .off: return "No Grain"
+        case .fine: return "Fine Grain"
+        case .heavy: return "Heavy Grain"
         }
     }
 
-    var symbol: String {
+    var next: GrainLevel {
         switch self {
-        case .exposure: return "sun.max"
-        case .warmth: return "thermometer.medium"
-        case .tint: return "drop"
-        case .contrast: return "circle.lefthalf.filled"
-        case .highlights: return "sun.horizon"
-        case .shadows: return "moon"
-        case .saturation: return "paintpalette"
-        case .sharpness: return "triangle"
-        case .grain: return "circle.dotted"
-        case .fade: return "cloud"
-        case .glow: return "light.max"
-        case .vignette: return "camera.metering.center.weighted"
+        case .off: return .fine
+        case .fine: return .heavy
+        case .heavy: return .off
+        }
+    }
+
+    var amount: Double {
+        switch self {
+        case .off: return 0
+        case .fine: return 0.3
+        case .heavy: return 0.7
         }
     }
 }
 
 struct DevelopSettings: Equatable, Codable {
     var look: Look = .natural
-    /// How much of the look is applied, from 0 to 100.
-    var lookStrength = 100.0
+    var grain: GrainLevel = .off
     var frame: PhotoFrame = .none
-    var showsDate = false
-    private var dials: [Dial: Double] = [:]
 
-    init() {}
-
-    /// Where a photo starts until one has been saved with a style of its own.
-    static var first: DevelopSettings {
-        var settings = DevelopSettings()
-        settings.frame = .print
-        return settings
-    }
-
-    subscript(dial: Dial) -> Double {
-        get { dials[dial] ?? 0 }
-        set { dials[dial] = newValue == 0 ? nil : newValue }
-    }
-
-    /// What carries over to the next photo: the style, but not corrections made for this one.
+    /// What carries over to the next photo. A frame is a choice for one photo, so it starts off.
     var style: DevelopSettings {
         var kept = self
-        for dial in Dial.adjustments {
-            kept[dial] = 0
-        }
+        kept.frame = .none
         return kept
-    }
-}
-
-/// The text a photo can carry, read from its own metadata.
-struct PhotoCaption {
-    var date = Date()
-    var specs = ""
-
-    init() {}
-
-    init(properties: [String: Any]) {
-        let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
-        let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] ?? [:]
-
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
-        if let taken = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String,
-           let parsed = formatter.date(from: taken) {
-            date = parsed
-        }
-
-        var parts: [String] = []
-        if let model = tiff[kCGImagePropertyTIFFModel as String] as? String {
-            parts.append(model)
-        }
-        if let focal = exif[kCGImagePropertyExifFocalLenIn35mmFilm as String] as? Int {
-            parts.append("\(focal)mm")
-        }
-        if let aperture = exif[kCGImagePropertyExifFNumber as String] as? Double {
-            parts.append(String(format: "f/%.1f", aperture))
-        }
-        if let exposure = exif[kCGImagePropertyExifExposureTime as String] as? Double, exposure > 0 {
-            parts.append(exposure < 1 ? "1/\(Int((1 / exposure).rounded()))s" : String(format: "%.1fs", exposure))
-        }
-        if let iso = (exif[kCGImagePropertyExifISOSpeedRatings as String] as? [Int])?.first {
-            parts.append("ISO \(iso)")
-        }
-        specs = parts.joined(separator: "   ")
-    }
-
-    var dateStamp: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "''yy MM dd"
-        return formatter.string(from: date)
-    }
-
-    static func textImage(_ text: String, size: CGFloat, color: UIColor) -> CIImage? {
-        let generator = CIFilter.attributedTextImageGenerator()
-        generator.text = NSAttributedString(string: text, attributes: [
-            .font: UIFont.monospacedDigitSystemFont(ofSize: size, weight: .medium),
-            .foregroundColor: color
-        ])
-        generator.scaleFactor = 1
-        return generator.outputImage
     }
 }
 
@@ -334,7 +216,7 @@ enum DevelopError: LocalizedError {
     }
 }
 
-/// Turns a captured photo into the finished image: crop, adjustments, look, effects, frame.
+/// Turns a captured photo into the finished image: crop, look, grain, frame.
 final class PhotoDeveloper {
     /// Display P3 throughout, so the preview shows the same colour as the saved file.
     private static let context = CIContext(
@@ -342,7 +224,6 @@ final class PhotoDeveloper {
     )
 
     private let source: CIImage
-    private let caption: PhotoCaption
     private let preview: CIImage
     private let thumbnail: CIImage
 
@@ -355,8 +236,8 @@ final class PhotoDeveloper {
     static func quickPreview(of placeholder: UIImage, settings: DevelopSettings, ratio: CaptureRatio) -> UIImage? {
         guard let cgImage = placeholder.cgImage else { return nil }
         var fast = settings
-        fast[.grain] = 0
-        return image(from: develop(crop(CIImage(cgImage: cgImage), to: ratio), fast, caption: PhotoCaption()))
+        fast.grain = .off
+        return image(from: develop(crop(CIImage(cgImage: cgImage), to: ratio), fast))
     }
 
     init(data: Data, ratio: CaptureRatio) throws {
@@ -366,7 +247,6 @@ final class PhotoDeveloper {
             throw DevelopError.unreadable
         }
         source = Self.crop(decoded, to: ratio).settingProperties(Self.uprightProperties(decoded.properties))
-        caption = PhotoCaption(properties: decoded.properties)
 
         guard let previewImage = Self.flattened(Self.crop(CIImage(cgImage: small), to: ratio)) else {
             throw DevelopError.unreadable
@@ -384,7 +264,7 @@ final class PhotoDeveloper {
     }
 
     func renderPreview(_ settings: DevelopSettings) -> UIImage? {
-        Self.image(from: Self.develop(preview, settings, caption: caption))
+        Self.image(from: Self.develop(preview, settings))
     }
 
     func renderThumbnails() -> [Look: UIImage] {
@@ -403,7 +283,7 @@ final class PhotoDeveloper {
     #if DEBUG
     /// Renders at full size, so tests can compare the saved photo with the preview.
     func renderFullSize(_ settings: DevelopSettings) -> UIImage? {
-        Self.image(from: Self.develop(source, settings, caption: caption))
+        Self.image(from: Self.develop(source, settings))
     }
     #endif
 
@@ -412,7 +292,7 @@ final class PhotoDeveloper {
         guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
             throw DevelopError.exportFailed
         }
-        let developed = Self.develop(source, settings, caption: caption).settingProperties(source.properties)
+        let developed = Self.develop(source, settings).settingProperties(source.properties)
         let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.95]
         guard let jpeg = Self.context.jpegRepresentation(of: developed, colorSpace: colorSpace, options: options) else {
             throw DevelopError.exportFailed
@@ -431,138 +311,9 @@ final class PhotoDeveloper {
         }
     }
 
-    private static func develop(_ image: CIImage, _ settings: DevelopSettings, caption: PhotoCaption) -> CIImage {
-        let adjusted = adjust(image, settings)
-        let toned = settings.look.apply(to: adjusted, strength: settings.lookStrength / 100)
-        var finished = addFade(to: toned, amount: settings[.fade] / 100)
-        finished = addGlow(to: finished, amount: settings[.glow] / 100)
-        finished = addVignette(to: finished, amount: settings[.vignette] / 100)
-        finished = addGrain(to: finished, amount: settings[.grain] / 100)
-        if settings.showsDate {
-            finished = addDate(caption.dateStamp, to: finished)
-        }
-        return settings.frame.apply(to: finished, specs: caption.specs)
-    }
-
-    /// Corrections to the photo itself, made before the look so it responds as it would on film.
-    private static func adjust(_ image: CIImage, _ settings: DevelopSettings) -> CIImage {
-        var result = image
-        if settings[.exposure] != 0 {
-            result = result.applyingFilter("CIExposureAdjust", parameters: [
-                kCIInputEVKey: settings[.exposure] / 100 * 2
-            ])
-        }
-
-        // Light-linear gains, so white balance moves without shifting brightness much.
-        let warmth = settings[.warmth] / 100 * 0.18
-        let tint = settings[.tint] / 100 * 0.12
-        if warmth != 0 || tint != 0 {
-            result = result.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: 1 + warmth, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: 1 - tint, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: 1 - warmth, w: 0)
-            ])
-        }
-
-        let contrast = settings[.contrast] / 100
-        let highlights = settings[.highlights] / 100
-        let shadows = settings[.shadows] / 100
-        if contrast != 0 || highlights != 0 || shadows != 0 {
-            result = toneCurve(on: result, levels: [
-                0,
-                0.25 - contrast * 0.07 + shadows * 0.12,
-                0.5 + (shadows + highlights) * 0.03,
-                0.75 + contrast * 0.07 + highlights * 0.12,
-                1
-            ])
-        }
-
-        if settings[.saturation] != 0 {
-            result = result.applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 1 + settings[.saturation] / 100
-            ])
-        }
-        if settings[.sharpness] != 0 {
-            result = result.applyingFilter("CISharpenLuminance", parameters: [
-                kCIInputSharpnessKey: settings[.sharpness] / 100,
-                // Scales with the photo, so the saved file looks as sharp as the preview.
-                kCIInputRadiusKey: 1.69 * max(image.extent.width, image.extent.height) / CGFloat(previewLongEdge)
-            ])
-        }
-        return result.cropped(to: image.extent)
-    }
-
-    /// A curve through five evenly spaced levels. The filter itself works in the steps the eye sees.
-    private static func toneCurve(on image: CIImage, levels: [Double]) -> CIImage {
-        var parameters: [String: Any] = [:]
-        for (index, level) in levels.enumerated() {
-            parameters["inputPoint\(index)"] = CIVector(x: CGFloat(index) / 4, y: CGFloat(level))
-        }
-        return image.applyingFilter("CIToneCurve", parameters: parameters).cropped(to: image.extent)
-    }
-
-    /// Lifts the blacks and pulls the whites down, like an old print.
-    private static func addFade(to image: CIImage, amount: Double) -> CIImage {
-        guard amount > 0 else { return image }
-        return toneCurve(on: image, levels: [
-            amount * 0.14,
-            0.25 + amount * 0.08,
-            0.5 + amount * 0.02,
-            0.75 - amount * 0.03,
-            1 - amount * 0.06
-        ])
-    }
-
-    /// A warm bloom around the brightest parts, like light scattering inside film.
-    private static func addGlow(to image: CIImage, amount: Double) -> CIImage {
-        guard amount > 0 else { return image }
-        let sigma = min(image.extent.width, image.extent.height) * 0.018
-        let strength = CGFloat(amount) * 0.9
-        let bloom = toneCurve(on: image, levels: [0, 0, 0.02, 0.3, 1])
-            .clampedToExtent()
-            .applyingGaussianBlur(sigma: sigma)
-            .cropped(to: image.extent)
-            .applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: strength, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: strength * 0.6, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: strength * 0.4, w: 0)
-            ])
-        return bloom
-            .applyingFilter("CIScreenBlendMode", parameters: [kCIInputBackgroundImageKey: image])
-            .cropped(to: image.extent)
-    }
-
-    private static func addVignette(to image: CIImage, amount: Double) -> CIImage {
-        guard amount > 0 else { return image }
-        let extent = image.extent
-        let reach = hypot(extent.width, extent.height) / 2
-        let edge = CGFloat(1 - amount * 0.7)
-        let gradient = CIFilter.radialGradient()
-        gradient.center = CGPoint(x: extent.midX, y: extent.midY)
-        gradient.radius0 = Float(reach * 0.45)
-        gradient.radius1 = Float(reach)
-        gradient.color0 = .white
-        gradient.color1 = CIColor(red: edge, green: edge, blue: edge)
-        guard let shade = gradient.outputImage else { return image }
-        return shade
-            .cropped(to: extent)
-            .applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: image])
-            .cropped(to: extent)
-    }
-
-    /// The orange date a film camera printed in the corner.
-    private static func addDate(_ text: String, to image: CIImage) -> CIImage {
-        let short = min(image.extent.width, image.extent.height)
-        let color = UIColor(red: 1, green: 0.55, blue: 0.16, alpha: 1)
-        guard let stamp = PhotoCaption.textImage(text, size: short * 0.035, color: color) else { return image }
-        let inset = short * 0.05
-        return stamp
-            .transformed(by: CGAffineTransform(
-                translationX: image.extent.maxX - inset - stamp.extent.width - stamp.extent.minX,
-                y: image.extent.minY + inset - stamp.extent.minY
-            ))
-            .composited(over: image)
-            .cropped(to: image.extent)
+    private static func develop(_ image: CIImage, _ settings: DevelopSettings) -> CIImage {
+        let toned = settings.look.apply(to: image)
+        return settings.frame.apply(to: addGrain(to: toned, amount: settings.grain.amount))
     }
 
     private static func addGrain(to image: CIImage, amount: Double) -> CIImage {

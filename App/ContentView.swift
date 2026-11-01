@@ -31,14 +31,12 @@ struct ContentView: View {
     @AppStorage("camera.ratio") private var ratio = CaptureRatio.threeFour
     @AppStorage("camera.timer") private var timer = 0
     @AppStorage("camera.grid") private var showsGrid = false
-    @AppStorage("camera.level") private var showsLevel = true
+    @AppStorage("camera.level") private var showsLevel = false
     @State private var isScanning = false
     @State private var scanIsSlow = false
     @State private var scanTask: Task<Void, Never>?
     @State private var message: String?
     @State private var showingSettings = false
-    @State private var showingRatioMenu = false
-    @State private var showingCameraMenu = false
     @State private var countdown: Int?
     @State private var countdownTask: Task<Void, Never>?
     @State private var lastPhoto: UIImage?
@@ -88,9 +86,10 @@ struct ContentView: View {
             }
         }
         .animation(Theme.quick, value: camera.capturedPhoto?.id)
+        .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showingSettings) {
-            SettingsView()
+            SettingsView(camera: camera)
         }
         .onChange(of: camera.errorMessage) { _, newMessage in
             if let newMessage {
@@ -136,12 +135,6 @@ struct ContentView: View {
             if wants, let lens = motion.target?.lens {
                 motion.noteZoomTaken()
                 camera.zoom(to: lens, rate: 2.5)
-            }
-        }
-        .onChange(of: ratio) { _, _ in
-            // The shot was framed for the old ratio.
-            if !isIdle {
-                stopGuiding()
             }
         }
         .onChange(of: camera.capturedPhoto?.id) { _, id in
@@ -196,20 +189,15 @@ struct ContentView: View {
 
     private var cameraScreen: some View {
         VStack(spacing: 0) {
-            topRow
-
             viewfinder
-
-            Spacer(minLength: 0)
 
             HintView(
                 motion: motion,
                 isScanning: isScanning,
                 scanIsSlow: scanIsSlow,
-                message: message ?? camera.interruption,
-                isDark: camera.isDarkScene && !camera.isNightOn
+                message: message ?? camera.interruption
             )
-            .frame(minHeight: 40)
+            .frame(minHeight: 44)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 0)
@@ -218,7 +206,7 @@ struct ContentView: View {
 
             controls
                 .padding(.horizontal, 48)
-                .padding(.bottom, -6)
+                .padding(.bottom, 4)
         }
     }
 
@@ -274,34 +262,24 @@ struct ContentView: View {
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
         .clipped()
+        .overlay(alignment: .top) { topRow }
     }
 
-    /// The ratio on the left; flash, camera options and settings on the right.
+    /// The ratio, flash and settings, over the view. Guiding hides them, leaving only the shot.
     private var topRow: some View {
         HStack(spacing: 0) {
             Button {
-                showingRatioMenu = true
+                withAnimation(Theme.quick) { ratio = ratio.next }
             } label: {
-                HStack(spacing: 8) {
-                    RatioIcon(ratio: ratio)
-                        .rotationEffect(.degrees(iconAngle))
-                    Text(ratio.rawValue)
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                        .fixedSize()
-                    Image(systemName: showingRatioMenu ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .foregroundStyle(.white)
-                .frame(height: 44)
-                .padding(.trailing, 8)
-                .contentShape(Rectangle())
+                Text(ratio.rawValue)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .rotationEffect(.degrees(iconAngle))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Aspect, \(ratio.rawValue)")
-            .popover(isPresented: $showingRatioMenu) {
-                RatioMenu(ratio: $ratio, isPresented: $showingRatioMenu)
-            }
 
             Spacer()
 
@@ -311,38 +289,17 @@ struct ContentView: View {
                 }
             }
 
-            Button {
-                showingCameraMenu = true
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "camera.aperture")
-                        .font(.title3)
-                        .foregroundStyle(cameraOptionsAreOn ? Theme.accent : Color.white)
-                        .rotationEffect(.degrees(iconAngle))
-                    Image(systemName: showingCameraMenu ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .foregroundStyle(.white)
-                .frame(width: 56, height: 44)
-                .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Camera options")
-            .popover(isPresented: $showingCameraMenu) {
-                CameraMenu(camera: camera, timer: $timer)
-            }
-
-            topButton(symbol: "ellipsis", isOn: false, label: "Settings") {
+            // Lit while Night or the timer, which live in Settings, are changing how photos are taken.
+            topButton(symbol: "ellipsis", isOn: camera.isNightOn || timer != 0, label: "Settings") {
                 showingSettings = true
             }
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
+        .shadow(color: Theme.keyline, radius: 1)
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
-    }
-
-    private var cameraOptionsAreOn: Bool {
-        camera.isNightOn || timer != 0 || camera.exposureCompensation != 0
+        .opacity(isIdle ? 1 : 0)
+        .allowsHitTesting(isIdle)
     }
 
     private func topButton(symbol: String, isOn: Bool, label: String, action: @escaping () -> Void) -> some View {
@@ -548,7 +505,7 @@ struct ContentView: View {
                 .contentTransition(.symbolEffect(.replace))
                 .rotationEffect(.degrees(iconAngle))
                 .frame(width: 52, height: 52)
-                .background(scanButtonIsLit ? Theme.accentWash : Theme.control, in: Circle())
+                .background(Theme.control, in: Circle())
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel(scanLabel)
@@ -786,7 +743,6 @@ private struct HintView: View {
     let isScanning: Bool
     let scanIsSlow: Bool
     let message: String?
-    let isDark: Bool
 
     var body: some View {
         Group {
@@ -797,15 +753,9 @@ private struct HintView: View {
                     .foregroundStyle(Theme.accent)
             } else if let target = motion.target {
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)
-            } else if isDark {
-                Text("Dark scene. Night is under \(Image(systemName: "camera.aperture"))")
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Tap \(Image(systemName: "sparkles")) to find a shot")
-                    .foregroundStyle(.secondary)
             }
         }
-        .font(.footnote)
+        .font(.subheadline)
         .multilineTextAlignment(.center)
         .lineLimit(2)
         .frame(maxWidth: .infinity)
@@ -832,15 +782,12 @@ private struct LensRow: View {
                     camera.zoom(to: lens)
                 } label: {
                     Text(label(isActive ? camera.zoomDisplay : lens))
-                        .font(.footnote.weight(isActive ? .semibold : .regular))
+                        .font(.subheadline.weight(isActive ? .semibold : .regular))
                         .monospacedDigit()
                         .lineLimit(1)
-                        .minimumScaleFactor(0.7)
                         .foregroundStyle(isActive ? Theme.accent : Color.secondary)
                         .rotationEffect(.degrees(iconAngle))
-                        .frame(width: 42, height: 42)
-                        .background(isActive ? Theme.accentWash : Theme.control, in: Circle())
-                        .frame(width: 44, height: 44)
+                        .frame(minWidth: 48, minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

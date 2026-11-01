@@ -1,9 +1,12 @@
 import SwiftUI
 
 struct SettingsView: View {
+    let camera: CameraController
+
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("camera.timer") private var timer = 0
     @AppStorage("camera.grid") private var showsGrid = false
-    @AppStorage("camera.level") private var showsLevel = true
+    @AppStorage("camera.level") private var showsLevel = false
     @State private var apiKey = KeyStore.load() ?? ""
     @State private var savedKey = KeyStore.load() ?? ""
     @State private var message: String?
@@ -11,11 +14,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Camera") {
-                    Toggle("Grid", isOn: $showsGrid)
-                    Toggle("Level", isOn: $showsLevel)
-                }
-
                 Section {
                     HStack {
                         SecureField("API Key", text: $apiKey)
@@ -34,6 +32,21 @@ struct SettingsView: View {
                 } footer: {
                     Text(message ?? footer)
                 }
+
+                Section("Camera") {
+                    Toggle("Night", isOn: Binding(get: { camera.isNightOn }, set: { camera.setNight($0) }))
+                    LabeledContent("Timer") {
+                        Picker("Timer", selection: $timer) {
+                            Text("Off").tag(0)
+                            Text("3s").tag(3)
+                            Text("10s").tag(10)
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    }
+                    Toggle("Grid", isOn: $showsGrid)
+                    Toggle("Level", isOn: $showsLevel)
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -43,7 +56,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         // A swipe away shouldn't lose a key you just pasted. Done saves it.
         .interactiveDismissDisabled(apiKey != savedKey)
     }

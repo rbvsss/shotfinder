@@ -48,28 +48,15 @@ final class FlowTests: XCTestCase {
         shoot("large-text-develop")
     }
 
-    /// A tap away from a popover closes it.
-    private func closeMenu() {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
-        sleep(1)
-    }
-
     /// A switch only flips when its own right side is tapped, not the middle of its row.
     private func flip(_ toggle: XCUIElement) {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
     }
 
-    /// Drags across a ruler, which sits below its title.
-    private func drag(_ slider: XCUIElement, by fraction: CGFloat) {
-        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(
-            forDuration: 0.05,
-            thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5 + fraction, dy: 0.8))
-        )
-    }
-
-    func testTopRowAndItsMenus() throws {
+    func testTopRowAndSettings() throws {
         try launch()
         XCTAssertTrue(app.buttons["Zoom .5x"].exists)
+        XCTAssertFalse(app.staticTexts["Tap to find a shot"].exists)
         shoot("e2e-01-idle")
 
         app.buttons["Flash, Off"].tap()
@@ -78,32 +65,23 @@ final class FlowTests: XCTestCase {
         app.buttons["Flash, On"].tap()
         XCTAssertTrue(app.buttons["Flash, Off"].waitForExistence(timeout: 2))
 
-        app.buttons["Aspect, 3:4"].tap()
-        XCTAssertTrue(app.buttons["1:1"].waitForExistence(timeout: 2))
-        sleep(1)
-        shoot("e2e-02-ratio-menu")
-        app.buttons["1:1"].tap()
-        XCTAssertTrue(app.buttons["Aspect, 1:1"].waitForExistence(timeout: 2))
-        sleep(1)
-        shoot("e2e-03-square")
-        app.buttons["Aspect, 1:1"].tap()
-        XCTAssertTrue(app.buttons["3:4"].waitForExistence(timeout: 2))
-        app.buttons["3:4"].tap()
-        XCTAssertTrue(app.buttons["Aspect, 3:4"].waitForExistence(timeout: 2))
-
-        app.buttons["Camera options"].tap()
-        let night = app.switches["Night"]
-        XCTAssertTrue(night.waitForExistence(timeout: 2))
-        XCTAssertTrue(app.sliders["Exposure"].exists)
-        flip(night)
-        sleep(1)
-        XCTAssertEqual(night.value as? String, "1")
-        shoot("e2e-04-camera-menu")
-        flip(night)
-        closeMenu()
+        for ratio in ["4:5", "1:1", "9:16", "3:4"] {
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Aspect'")).firstMatch.tap()
+            XCTAssertTrue(app.buttons["Aspect, \(ratio)"].waitForExistence(timeout: 2))
+            if ratio == "1:1" {
+                sleep(1)
+                shoot("e2e-03-square")
+            }
+        }
 
         app.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        let night = app.switches["Night"]
+        XCTAssertTrue(night.waitForExistence(timeout: 2))
+        flip(night)
+        sleep(1)
+        XCTAssertEqual(night.value as? String, "1")
+        flip(night)
         let grid = app.switches["Grid"]
         XCTAssertTrue(grid.exists)
         XCTAssertTrue(app.switches["Level"].exists)
@@ -142,10 +120,11 @@ final class FlowTests: XCTestCase {
 
     func testTimerCountsDownThenShoots() throws {
         try launch()
-        app.buttons["Camera options"].tap()
-        XCTAssertTrue(app.buttons["3s"].waitForExistence(timeout: 2))
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["3s"].waitForExistence(timeout: 3))
         app.buttons["3s"].tap()
-        closeMenu()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["Take photo"].waitForExistence(timeout: 3))
 
         app.buttons["Take photo"].tap()
         shoot("e2e-19-timer")
@@ -153,12 +132,12 @@ final class FlowTests: XCTestCase {
 
         app.buttons["Delete"].tap()
         app.buttons["Delete Photo"].tap()
-        XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 4))
 
-        app.buttons["Camera options"].tap()
-        XCTAssertTrue(app.buttons["Off"].waitForExistence(timeout: 2))
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["Off"].waitForExistence(timeout: 3))
         app.buttons["Off"].tap()
-        closeMenu()
+        app.buttons["Done"].tap()
     }
 
     func testFullFlowFromScanToSave() throws {
@@ -183,43 +162,14 @@ final class FlowTests: XCTestCase {
         app.buttons["Lantern"].tap()
         sleep(1)
         shoot("e2e-13-look")
-        app.buttons["Lantern"].tap()
-        XCTAssertTrue(app.sliders["Lantern"].waitForExistence(timeout: 2))
-        sleep(1)
-        shoot("e2e-14-look-strength")
 
-        app.buttons["Adjust"].tap()
-        let exposure = app.sliders["Exposure"]
-        XCTAssertTrue(exposure.waitForExistence(timeout: 2))
-        drag(exposure, by: 0.15)
-        app.buttons["Contrast"].tap()
-        XCTAssertTrue(app.sliders["Contrast"].waitForExistence(timeout: 2))
-        sleep(1)
-        shoot("e2e-15-adjust")
+        app.buttons["Grain, No Grain"].tap()
+        XCTAssertTrue(app.buttons["Grain, Fine Grain"].waitForExistence(timeout: 2))
 
-        app.buttons["Effects"].tap()
-        let grain = app.sliders["Grain"]
-        XCTAssertTrue(grain.waitForExistence(timeout: 2))
-        drag(grain, by: 0.25)
-        app.buttons["Glow"].tap()
-        XCTAssertTrue(app.sliders["Glow"].waitForExistence(timeout: 2))
-        drag(app.sliders["Glow"], by: 0.25)
-        sleep(1)
-        shoot("e2e-16-effects")
-
-        app.buttons["Frames"].tap()
-        XCTAssertTrue(app.buttons["Frame Paper"].waitForExistence(timeout: 2))
-        app.buttons["Frame Paper"].tap()
-        flip(app.switches["Date stamp"])
+        app.buttons["Frame, No Frame"].tap()
+        XCTAssertTrue(app.buttons["Frame, Print"].waitForExistence(timeout: 2))
         sleep(1)
         shoot("e2e-17-frames")
-
-        // Undo steps back through the frame, and redo returns it.
-        XCTAssertTrue(app.buttons["Undo"].isEnabled)
-        app.buttons["Undo"].tap()
-        sleep(1)
-        XCTAssertTrue(app.buttons["Redo"].isEnabled)
-        app.buttons["Redo"].tap()
 
         let photo = app.images["Photo with Lantern look"]
         XCTAssertTrue(photo.exists)

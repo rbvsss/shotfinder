@@ -38,11 +38,7 @@ final class CameraController: NSObject {
     private(set) var shutterBlinks = 0
     private(set) var interruption: String?
     private(set) var isNightOn = false
-    /// The camera reports a scene dark enough that flash or Night would help.
-    private(set) var isDarkScene = false
     private(set) var isFocusLocked = false
-    /// Brightness set in the controls panel, which stays until changed.
-    private(set) var exposureCompensation: Float = 0
     /// Brightness set by dragging after a tap, which goes when the scene changes.
     private(set) var tapExposure: Float = 0
     var flashMode: AVCaptureDevice.FlashMode = .off
@@ -66,7 +62,6 @@ final class CameraController: NSObject {
     @ObservationIgnored private var minimumFactor: Double = 1
     @ObservationIgnored private var maximumFactor: Double = 1
     @ObservationIgnored private var zoomObservation: NSKeyValueObservation?
-    @ObservationIgnored private var sceneObservation: NSKeyValueObservation?
     @ObservationIgnored private var pendingFrame: CheckedContinuation<ScanFrame, Error>?
     @ObservationIgnored private var onPendingFrame: (() -> Void)?
     @ObservationIgnored private var frameRequest = 0
@@ -181,7 +176,6 @@ final class CameraController: NSObject {
             session.commitConfiguration()
 
             observeSession(camera)
-            monitorDarkScenes()
 
             device = camera
             optics = Self.optics(for: camera)
@@ -220,19 +214,6 @@ final class CameraController: NSObject {
             let factor = Double(device.videoZoomFactor)
             self.onZoomFactorChange?(factor)
             DispatchQueue.main.async { self.zoomDisplay = factor / self.wideFactor }
-        }
-    }
-
-    private func monitorDarkScenes() {
-        let monitor = AVCapturePhotoSettings()
-        if photoOutput.supportedFlashModes.contains(.auto) {
-            monitor.flashMode = .auto
-        }
-        monitor.photoQualityPrioritization = .quality
-        photoOutput.photoSettingsForSceneMonitoring = monitor
-        sceneObservation = photoOutput.observe(\.isFlashScene, options: [.new]) { [weak self] output, _ in
-            let isDark = output.isFlashScene
-            DispatchQueue.main.async { self?.isDarkScene = isDark }
         }
     }
 
@@ -395,11 +376,6 @@ final class CameraController: NSObject {
         }
     }
 
-    func setExposureCompensation(_ value: Float) {
-        exposureCompensation = value
-        applyBias()
-    }
-
     /// Follows a drag on the viewfinder. Scene watching pauses so the change doesn't undo itself.
     func setTapExposure(_ value: Float) {
         tapExposure = value
@@ -420,7 +396,7 @@ final class CameraController: NSObject {
     }
 
     private func applyBias() {
-        let total = exposureCompensation + tapExposure + (isNightOn ? Self.nightBoost : 0)
+        let total = tapExposure + (isNightOn ? Self.nightBoost : 0)
         sessionQueue.async { [self] in
             guard let camera = device, (try? camera.lockForConfiguration()) != nil else { return }
             let bias = min(max(total, camera.minExposureTargetBias), camera.maxExposureTargetBias)
@@ -651,5 +627,23 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
         finishCapture(error: nil)
+    }
+}
+
+extension AVCaptureDevice.FlashMode {
+    var title: String {
+        switch self {
+        case .auto: return "Auto"
+        case .on: return "On"
+        default: return "Off"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .auto: return "bolt.badge.automatic.fill"
+        case .on: return "bolt.fill"
+        default: return "bolt.slash"
+        }
     }
 }
