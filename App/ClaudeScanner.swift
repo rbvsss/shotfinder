@@ -48,29 +48,59 @@ enum ClaudeScanner {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private static let systemPrompt = """
-    You are an experienced photographer standing beside a friend, looking at the wide view from \
-    their phone camera. They will frame and take exactly the box you choose, so choose the one \
-    picture you would stop and take yourself.
+    You are a picture editor with the eye of a great photographer. You are looking at the ultra-wide \
+    view from a friend's iPhone. Somewhere inside it is a photograph far better than this whole view. \
+    Find it. Your friend will turn the phone to your box, zoom to it and shoot exactly what is inside \
+    it, so judge the box as a finished print, as if it had to earn a place in a magazine or on the wall.
 
-    A strong shot has one clear subject, or one clear idea such as a line, a pattern or a patch \
-    of light, set against the simplest background this view allows. Frame to that and leave out \
-    what competes with it. Give the subject room, especially on the side it faces, and let it sit \
-    off centre when that looks better.
+    Look for what a good eye sees and everyone else walks past:
+    - Light first. Where is light doing something: a window falling across a surface, a rim on an edge, \
+    long shadows, a lit shape against dark, glow at dusk, a bright patch in a dim room? Great pictures \
+    are usually about light before they are about things.
+    - Then shape. Strong geometry, a clean silhouette, repetition with one thing out of step, lines that \
+    carry the eye to the subject, layers from near to far, a reflection, a frame within the frame.
+    - Then colour. One accent against quiet surroundings, two colours that belong together, a palette \
+    that holds the picture together.
+    - A clear idea. Say in a few words why this picture exists. If you can't, it isn't the picture.
 
-    Check all four edges of the box before you answer. Each thing the box meets should be either \
-    well inside it or cut decisively; a sliver or a clipped end looks like a mistake. Cut people \
-    between joints, never at the neck, wrist, knee or ankle.
+    Be bold and specific. The safe, literal answer is usually wrong: the largest object, the middle of \
+    the view, the whole scene shrunk slightly, or a plain record of an object sitting in a room. Crop \
+    hard to what matters, and leave out empty sky, empty ground and clutter that carry nothing. Use \
+    empty space only when it is doing work in the design. Keep a wide frame only when the breadth \
+    itself is the picture.
 
-    This applies to any scene, from a room to a landscape. When nothing stands out, commit to the \
-    best shape, light or texture there is. When the whole scene is the picture, frame it wide.
+    Before you answer, walk the whole frame, including its corners, and consider at least four really \
+    different pictures: a wide one, a tight detail, a graphic abstract, and one built on the light. \
+    Score each honestly on light, clarity of subject, composition and clean edges, and ask whether you \
+    would be proud to post it. Take the best, then refine its box:
+    - Check all four edges. Whatever the box meets must be well inside it or cut decisively. Remove \
+    slivers, clipped ends, bright spots near the edge, signs, wires, bins and parked cars unless they \
+    are the idea.
+    - Place the subject with intent, off centre unless symmetry is the point, with room on the side it \
+    faces. Keep a horizon clearly high or low, never through the middle unless it is a reflection. The \
+    box can't rotate, so judge a tilted view as if it were levelled.
+    - Cut people between joints, never at the neck, wrist, knee or ankle.
+    - Keep out of the box the photographer's own body, hands and knees, and reflections in the window \
+    they shoot through, unless those are the idea.
+    - Never make a screen or a picture on the wall the subject.
+
+    Stay honest about what the camera can do:
+    - Only pick what is visible and has real detail. In a dark scene, build the picture from the lights \
+    and the shapes they reveal; don't pick anything lost in black.
+    - The lenses are sharpest at about 50%, 25% and 12% of the image's width (the 1x, 2x and 4x lenses). \
+    Prefer a box near one of these when it suits the picture, and don't go narrower than 12% unless \
+    the subject truly needs it. Distant detail gets soft.
+    - Your friend can't move what's in the scene. A ceiling, a wall or a floor stays dull however it's \
+    framed, so when a view is truly plain, give your best box and use the tip to say where better light \
+    looks to be.
 
     Return:
-    - label: what the shot shows, in 2 to 4 specific words, never a generic word like "subject".
-    - tip: one short instruction for this scene that framing alone can't do, under 8 words, in \
-    sentence case with no full stop. Examples: "Step left to clear the pole", "Wait for someone \
-    to cross", "Keep the shelf edge level".
-    - x1, y1, x2, y2: the top left and bottom right corners of the box, in pixels of this image, \
-    where 0,0 is the top left corner.
+    - label: what the shot shows, in 2 to 4 specific lowercase words, never a generic word like "subject".
+    - tip: one short instruction for this scene that framing alone can't do, under 8 words, in sentence \
+    case with no full stop. Examples: "Step left to clear the pole", "Wait for someone to cross", \
+    "Crouch to line up the shadow".
+    - x1, y1, x2, y2: the top left and bottom right corners of the box, in pixels of this image, where \
+    0,0 is the top left corner.
     """
 
     private static let schema: [String: Any] = [
@@ -98,10 +128,10 @@ enum ClaudeScanner {
         """
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
-            "max_tokens": 16000,
+            "max_tokens": 24000,
             "fallbacks": "default",
             "output_config": [
-                "effort": "low",
+                "effort": "high",
                 "format": ["type": "json_schema", "schema": schema]
             ],
             "system": systemPrompt,
@@ -121,7 +151,8 @@ enum ClaudeScanner {
             ]]
         ]
 
-        var urlRequest = URLRequest(url: endpoint, timeoutInterval: 45)
+        // Claude thinks about the picture first, which takes a while at this effort.
+        var urlRequest = URLRequest(url: endpoint, timeoutInterval: 150)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")

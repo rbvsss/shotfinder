@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("camera.grid") private var showsGrid = false
+    @AppStorage("camera.level") private var showsLevel = true
     @State private var apiKey = KeyStore.load() ?? ""
     @State private var savedKey = KeyStore.load() ?? ""
     @State private var message: String?
@@ -9,6 +11,11 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Camera") {
+                    Toggle("Grid", isOn: $showsGrid)
+                    Toggle("Level", isOn: $showsLevel)
+                }
+
                 Section {
                     HStack {
                         SecureField("API Key", text: $apiKey)
@@ -36,7 +43,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .presentationDetents([.height(260)])
+        .presentationDetents([.medium])
         // A swipe away shouldn't lose a key you just pasted. Done saves it.
         .interactiveDismissDisabled(apiKey != savedKey)
     }

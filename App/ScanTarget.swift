@@ -17,7 +17,7 @@ struct ScanTarget {
         let centerX = min(max(result.centerX, 0), 1)
         let centerY = min(max(result.centerY, 0), 1)
         let scale = min(max(result.size / Double(ratio.cropInViewfinder.width), 0.1), 1)
-        label = result.label
+        label = result.label.lowercased()
         tip = result.tip
         self.scale = scale
         self.scanZoomFactor = scanZoomFactor
@@ -27,10 +27,6 @@ struct ScanTarget {
             (1 - 2 * centerY) * optics.tanVertical / scanZoomFactor,
             -1
         ))
-    }
-
-    var displayLabel: String {
-        label.prefix(1).uppercased() + label.dropFirst()
     }
 
     /// Where the shot currently appears, as fractions of the viewfinder. Nil when it is behind the phone.
@@ -58,6 +54,11 @@ struct GuideProjection {
     /// How much of the crop the shot covers. 1 means it fills the frame exactly.
     let fill: Double
 
+    /// Whether part of the shot's frame reaches past the viewfinder, hiding some of its corners.
+    var overflowsView: Bool {
+        x - width / 2 < 0 || x + width / 2 > 1 || y - height / 2 < 0 || y + height / 2 > 1
+    }
+
     /// Whether the middle of the shot is somewhere inside the viewfinder.
     var isInView: Bool {
         x >= 0 && x <= 1 && y >= 0 && y <= 1
@@ -77,6 +78,6 @@ struct GuideProjection {
 
     /// Whether the shot would still be near the middle after zooming in by this much.
     func staysCentered(afterZooming growth: Double) -> Bool {
-        growth > 1 && hypot(x - 0.5, y - 0.5) * growth < 0.2
+        growth > 1 && hypot(x - 0.5, y - 0.5) * growth < 0.08
     }
 }

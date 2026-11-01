@@ -1,3 +1,4 @@
+import ImageIO
 import XCTest
 @testable import ShotFinder
 
@@ -54,9 +55,9 @@ final class PhotoDeveloperTests: XCTestCase {
         }
     }
 
-    func testGraphiteIsNeutral() throws {
+    func testBlackAndWhiteIsNeutral() throws {
         var settings = DevelopSettings()
-        settings.look = .graphite
+        settings.look = .soot
         let color = try averageColor(XCTUnwrap(developer().renderPreview(settings)))
         XCTAssertLessThan(abs(Int(color[0]) - Int(color[2])), 8)
     }
@@ -65,7 +66,7 @@ final class PhotoDeveloperTests: XCTestCase {
         let ready = try developer()
         let clean = try XCTUnwrap(ready.renderPreview(DevelopSettings()))
         var settings = DevelopSettings()
-        settings.grain = .heavy
+        settings[.grain] = 70
         let grainy = try XCTUnwrap(ready.renderPreview(settings))
         XCTAssertEqual(grainy.size, clean.size)
         let before = try averageColor(clean)
@@ -108,14 +109,14 @@ final class PhotoDeveloperTests: XCTestCase {
             context.fill(CGRect(x: 0, y: 0, width: 3024, height: 4032))
         }
         let ready = try PhotoDeveloper(data: XCTUnwrap(grey.jpegData(compressionQuality: 1)), ratio: .threeFour)
-        for level in [GrainLevel.fine, .heavy] {
+        for level in [30.0, 70.0] {
             var settings = DevelopSettings()
-            settings.grain = level
+            settings[.grain] = level
             let preview = try noise(in: XCTUnwrap(ready.renderPreview(settings)))
             let saved = try noise(in: XCTUnwrap(ready.renderFullSize(settings)))
-            XCTAssertGreaterThan(preview, 1, level.rawValue)
-            XCTAssertGreaterThan(saved / preview, 0.6, "\(level.rawValue): preview \(preview), saved \(saved)")
-            XCTAssertLessThan(saved / preview, 1.6, "\(level.rawValue): preview \(preview), saved \(saved)")
+            XCTAssertGreaterThan(preview, 1, "\(level)")
+            XCTAssertGreaterThan(saved / preview, 0.6, "\(level): preview \(preview), saved \(saved)")
+            XCTAssertLessThan(saved / preview, 1.6, "\(level): preview \(preview), saved \(saved)")
         }
     }
 
@@ -123,10 +124,96 @@ final class PhotoDeveloperTests: XCTestCase {
         let ready = try developer()
         let plain = try XCTUnwrap(ready.renderPreview(DevelopSettings()))
         var settings = DevelopSettings()
-        settings.frame = .mat
+        settings.frame = .paper
         let framed = try XCTUnwrap(ready.renderPreview(settings))
         XCTAssertEqual(framed.size.width, plain.size.width * 1.12, accuracy: 2)
         XCTAssertEqual(framed.size.height, plain.size.height + plain.size.width * 0.24, accuracy: 2)
+    }
+
+    func testEveryFrameAndDateStampRender() throws {
+        let ready = try developer()
+        for frame in PhotoFrame.allCases {
+            var settings = DevelopSettings()
+            settings.frame = frame
+            settings.showsDate = true
+            XCTAssertNotNil(ready.renderPreview(settings), frame.rawValue)
+        }
+    }
+
+    private func color(with change: (inout DevelopSettings) -> Void) throws -> [Int] {
+        var settings = DevelopSettings()
+        change(&settings)
+        return try averageColor(XCTUnwrap(developer().renderPreview(settings))).map(Int.init)
+    }
+
+    func testExposureAndHighlightsAndShadowsMoveBrightness() throws {
+        let plain = try color { _ in }
+        XCTAssertGreaterThan(try color { $0[.exposure] = 50 }[1], plain[1] + 10)
+        XCTAssertLessThan(try color { $0[.exposure] = -50 }[1], plain[1] - 10)
+        XCTAssertGreaterThan(try color { $0[.shadows] = 100 }[1], plain[1])
+        XCTAssertLessThan(try color { $0[.highlights] = -100 }[1], plain[1])
+    }
+
+    func testWarmthMovesRedAgainstBlue() throws {
+        let plain = try color { _ in }
+        let warm = try color { $0[.warmth] = 100 }
+        let cool = try color { $0[.warmth] = -100 }
+        XCTAssertGreaterThan(warm[0] - warm[2], plain[0] - plain[2])
+        XCTAssertLessThan(cool[0] - cool[2], plain[0] - plain[2])
+    }
+
+    func testSaturationZeroAtMinimum() throws {
+        let grey = try color { $0[.saturation] = -100 }
+        XCTAssertLessThan(abs(grey[0] - grey[2]), 3)
+    }
+
+    func testEffectsChangeThePhotoAndKeepItsSize() throws {
+        let ready = try developer()
+        let plain = try XCTUnwrap(ready.renderPreview(DevelopSettings()))
+        let plainColor = try averageColor(plain)
+        for dial in [Dial.fade, .glow, .vignette] {
+            var settings = DevelopSettings()
+            settings[dial] = 100
+            let changed = try XCTUnwrap(ready.renderPreview(settings))
+            XCTAssertEqual(changed.size, plain.size, dial.rawValue)
+            XCTAssertNotEqual(try averageColor(changed), plainColor, dial.rawValue)
+        }
+    }
+
+    func testLookStrengthBlendsTowardsThePhoto() throws {
+        let look = try XCTUnwrap(Look.allCases.first { $0 != .natural })
+        let plain = try color { _ in }
+        let none = try color {
+            $0.look = look
+            $0.lookStrength = 0
+        }
+        XCTAssertEqual(none, plain)
+    }
+
+    func testStyleKeepsTheLookAndDropsCorrections() throws {
+        var settings = DevelopSettings()
+        settings.look = try XCTUnwrap(Look.allCases.first { $0 != .natural })
+        settings[.exposure] = 40
+        settings[.grain] = 30
+        let decoded = try JSONDecoder().decode(DevelopSettings.self, from: JSONEncoder().encode(settings.style))
+        XCTAssertEqual(decoded.look, settings.look)
+        XCTAssertEqual(decoded[.exposure], 0)
+        XCTAssertEqual(decoded[.grain], 30)
+    }
+
+    func testCaptionReadsTheCameraSettings() {
+        let caption = PhotoCaption(properties: [
+            kCGImagePropertyTIFFDictionary as String: [kCGImagePropertyTIFFModel as String: "iPhone 18 Pro"],
+            kCGImagePropertyExifDictionary as String: [
+                kCGImagePropertyExifFocalLenIn35mmFilm as String: 24,
+                kCGImagePropertyExifFNumber as String: 1.8,
+                kCGImagePropertyExifExposureTime as String: 0.02,
+                kCGImagePropertyExifISOSpeedRatings as String: [200],
+                kCGImagePropertyExifDateTimeOriginal as String: "2026:11:01 17:58:00"
+            ]
+        ])
+        XCTAssertEqual(caption.specs, "iPhone 18 Pro   24mm   f/1.8   1/50s   ISO 200")
+        XCTAssertEqual(caption.dateStamp, "'26 11 01")
     }
 
     func testUnreadablePhotoFailsCleanly() {
