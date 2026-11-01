@@ -276,7 +276,10 @@ struct ContentView: View {
                     .monospacedDigit()
                     .foregroundStyle(.white)
                     .rotationEffect(.degrees(iconAngle))
-                    .frame(minWidth: 44, minHeight: 44)
+                    .padding(.horizontal, 12)
+                    .frame(minWidth: 44, minHeight: 32)
+                    .background(Theme.pill, in: Capsule())
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Aspect, \(ratio.rawValue)")
@@ -294,7 +297,6 @@ struct ContentView: View {
                 showingSettings = true
             }
         }
-        .shadow(color: Theme.keyline, radius: 1)
         .padding(.horizontal, 8)
         .padding(.top, 4)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
@@ -305,9 +307,11 @@ struct ContentView: View {
     private func topButton(symbol: String, isOn: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.body.weight(.medium))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(isOn ? Theme.accent : Color.white)
                 .rotationEffect(.degrees(iconAngle))
+                .frame(width: 32, height: 32)
+                .background(Theme.pill, in: Circle())
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
