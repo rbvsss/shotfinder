@@ -65,6 +65,9 @@ final class FlowTests: XCTestCase {
         shoot("e2e-01-idle")
 
         app.buttons["Flash, Off"].tap()
+        sleep(1)
+        shoot("dbg-after-flash-tap")
+        print("BUTTONS", app.buttons.allElementsBoundByIndex.map { "\($0.label) \($0.frame)" })
         XCTAssertTrue(app.buttons["Flash, Auto"].waitForExistence(timeout: 2))
         app.buttons["Flash, Auto"].tap()
         app.buttons["Flash, On"].tap()

@@ -46,6 +46,7 @@ struct ContentView: View {
     @State private var touch: ViewfinderTouch?
     @State private var shutterBlink = false
     @GestureState private var shutterHeld = false
+    @State private var shutterFired = false
     @State private var iconAngle = 0.0
     @State private var idleStop: Task<Void, Never>?
     /// The zoom to go back to after a scan, since scanning switches to the widest lens.
@@ -84,6 +85,8 @@ struct ContentView: View {
         .animation(Theme.quick, value: camera.capturedPhoto?.id)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        // The top buttons sit at the screen's edge, so a tap must not wait on the system's swipe.
+        .defersSystemGestures(on: .top)
         .sheet(item: $sheet) { active in
             switch active {
             case .controls:
@@ -505,12 +508,21 @@ struct ContentView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($shutterHeld) { _, held, _ in
-                    if !held {
-                        takePhoto()
-                    }
                     held = true
                 }
+                .onChanged { _ in
+                    if !shutterFired {
+                        shutterFired = true
+                        takePhoto()
+                    }
+                }
         )
+        // Follows the gesture state, which also resets if the press is interrupted.
+        .onChange(of: shutterHeld) { _, held in
+            if !held {
+                shutterFired = false
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel("Take photo")
         .accessibilityValue(motion.guide.isAligned ? "Lined up" : "")
