@@ -16,12 +16,10 @@ final class CapturedPhoto: Identifiable {
     let id = UUID()
     let placeholder: UIImage?
     fileprivate(set) var data: Data?
-    fileprivate(set) var rawData: Data?
 
-    init(placeholder: UIImage? = nil, data: Data? = nil, rawData: Data? = nil) {
+    init(placeholder: UIImage? = nil, data: Data? = nil) {
         self.placeholder = placeholder
         self.data = data
-        self.rawData = rawData
     }
 }
 
@@ -36,7 +34,6 @@ final class CameraController: NSObject {
     private(set) var lenses: [Double] = []
     private(set) var zoomDisplay: Double = 1
     private(set) var hasFlash = false
-    private(set) var supportsRAW = false
     private(set) var isCapturing = false
     private(set) var shutterBlinks = 0
     private(set) var interruption: String?
@@ -65,8 +62,6 @@ final class CameraController: NSObject {
     @ObservationIgnored private var frameRequest = 0
     @ObservationIgnored private var wantsPlaceholder = false
     @ObservationIgnored private var processedData: Data?
-    @ObservationIgnored private var rawData: Data?
-    @ObservationIgnored private var rawRequested = false
     @ObservationIgnored private var captureIsUpright = true
     @ObservationIgnored private var discardsCurrentCapture = false
 
@@ -81,7 +76,6 @@ final class CameraController: NSObject {
         isStaged = true
         self.lenses = lenses
         stagedBackdrop = backdrop
-        supportsRAW = true
         hasFlash = true
         isPreviewLive = true
         wideFactor = 2
@@ -170,9 +164,7 @@ final class CameraController: NSObject {
             if let connection = videoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
             }
-            photoOutput.isAppleProRAWEnabled = photoOutput.isAppleProRAWSupported
             session.commitConfiguration()
-            let rawAvailable = photoOutput.isAppleProRAWEnabled
 
             observeSession(camera)
 
@@ -193,16 +185,11 @@ final class CameraController: NSObject {
                 self.lenses = available
                 self.zoomDisplay = 1
                 self.hasFlash = flash
-                self.supportsRAW = rawAvailable
                 self.status = .ready
             }
 
             session.startRunning()
-            var prepared = [makeSettings(raw: false)]
-            if rawAvailable {
-                prepared.append(makeSettings(raw: true))
-            }
-            photoOutput.setPreparedPhotoSettingsArray(prepared) { _, _ in }
+            photoOutput.setPreparedPhotoSettingsArray([makeSettings()]) { _, _ in }
             DispatchQueue.main.async { self.isPreviewLive = true }
         }
     }
@@ -299,17 +286,19 @@ final class CameraController: NSObject {
         return CameraOptics(tanHorizontal: tanLong * Double(short) / Double(long), tanVertical: tanLong)
     }
 
-    /// The phone's real lenses and optical-quality crops, as shown on the zoom buttons.
+    /// Up to four zoom buttons: the phone's real lenses and the optical-quality crop between them.
+    /// Longer zooms are still a pinch away.
     private static func lensList(for camera: AVCaptureDevice, wideFactor: Double, switchOvers: [Double], maximum: Double) -> [Double] {
         let minimum = Double(camera.minAvailableVideoZoomFactor)
         var factors = [minimum, wideFactor]
         factors.append(contentsOf: switchOvers)
         let crops = camera.activeFormat.secondaryNativeResolutionZoomFactors.map(Double.init)
         factors.append(contentsOf: crops.isEmpty ? [wideFactor * 2] : crops)
+        let longest = switchOvers.last.map { min($0, maximum) } ?? min(wideFactor * 2, maximum)
         let displayValues = factors
-            .filter { $0 >= minimum && $0 <= maximum }
+            .filter { $0 >= minimum && $0 <= longest }
             .map { $0 / wideFactor }
-        return Array(Set(displayValues)).sorted()
+        return Array(Array(Set(displayValues)).sorted().prefix(4))
     }
 
     /// Moves to a zoom given as shown on the lens buttons, where 1 is the main camera.
@@ -409,7 +398,7 @@ final class CameraController: NSObject {
         onPendingFrame = nil
     }
 
-    func capturePhoto(rotationAngle: CGFloat, raw: Bool) {
+    func capturePhoto(rotationAngle: CGFloat) {
         guard !isCapturing else { return }
         #if DEBUG
         if isStaged {
@@ -430,10 +419,8 @@ final class CameraController: NSObject {
                 connection.videoRotationAngle = rotationAngle
             }
             processedData = nil
-            rawData = nil
-            rawRequested = raw
             captureIsUpright = rotationAngle == 90
-            let settings = makeSettings(raw: raw)
+            let settings = makeSettings()
             if photoOutput.supportedFlashModes.contains(flash) {
                 settings.flashMode = flash
             }
@@ -441,27 +428,17 @@ final class CameraController: NSObject {
         }
     }
 
-    private func makeSettings(raw: Bool) -> AVCapturePhotoSettings {
-        let processed: [String: Any]? = photoOutput.availablePhotoCodecTypes.contains(.hevc)
-            ? [AVVideoCodecKey: AVVideoCodecType.hevc]
-            : nil
-        let settings: AVCapturePhotoSettings
-        if raw, let format = photoOutput.availableRawPhotoPixelFormatTypes.first(where: AVCapturePhotoOutput.isAppleProRAWPixelFormat) {
-            settings = AVCapturePhotoSettings(rawPixelFormatType: format, processedFormat: processed)
-        } else {
-            settings = processed.map { AVCapturePhotoSettings(format: $0) } ?? AVCapturePhotoSettings()
-        }
+    private func makeSettings() -> AVCapturePhotoSettings {
+        let settings = photoOutput.availablePhotoCodecTypes.contains(.hevc)
+            ? AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+            : AVCapturePhotoSettings()
         settings.photoQualityPrioritization = .quality
         return settings
     }
 
     private func finishCapture(error: String?) {
         let data = processedData
-        let raw = rawData
-        let rawMissing = rawRequested && raw == nil
         processedData = nil
-        rawData = nil
-        rawRequested = false
         DispatchQueue.main.async {
             self.isCapturing = false
             if self.discardsCurrentCapture {
@@ -475,12 +452,8 @@ final class CameraController: NSObject {
             }
             if let photo = self.capturedPhoto {
                 photo.data = data
-                photo.rawData = raw
             } else {
-                self.capturedPhoto = CapturedPhoto(data: data, rawData: raw)
-            }
-            if rawMissing {
-                self.errorMessage = "This shot has no RAW file, but the photo is fine."
+                self.capturedPhoto = CapturedPhoto(data: data)
             }
         }
     }
@@ -549,11 +522,7 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         guard error == nil, let data = photo.fileDataRepresentation() else { return }
-        if photo.isRawPhoto {
-            rawData = data
-        } else {
-            processedData = data
-        }
+        processedData = data
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {

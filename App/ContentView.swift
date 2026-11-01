@@ -11,22 +11,28 @@ struct ContentView: View {
     private static let lensSettleDelay: UInt64 = 300_000_000
     /// How long the camera keeps running behind the develop screen before it pauses.
     private static let developIdleLimit: UInt64 = 30_000_000_000
+    /// How long a scan can run before saying so.
+    private static let slowScanDelay: UInt64 = 8_000_000_000
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("camera.ratio") private var ratio = CaptureRatio.threeFour
-    @AppStorage("camera.raw") private var rawEnabled = false
+    @AppStorage("camera.hasScanned") private var hasScanned = false
     @State private var isScanning = false
+    @State private var scanIsSlow = false
     @State private var scanTask: Task<Void, Never>?
     @State private var message: String?
     @State private var showingSettings = false
     @State private var lastPhoto: UIImage?
+    @State private var saves = 0
     @GestureState private var pinchStartZoom: Double?
     @State private var focusPoint: CGPoint?
     @State private var shutterBlink = false
     @GestureState private var shutterHeld = false
     @State private var iconAngle = 0.0
     @State private var idleStop: Task<Void, Never>?
+    /// The zoom to go back to after a scan, since scanning switches to the widest lens.
+    @State private var zoomBeforeScan: Double?
 
     var body: some View {
         ZStack {
@@ -45,12 +51,12 @@ struct ContentView: View {
                 DevelopView(
                     photo: photo,
                     ratio: ratio,
-                    onSaved: { thumbnail, rawSaved in
-                        lastPhoto = thumbnail
+                    onSaved: { thumbnail in
+                        withAnimation(.snappy(duration: 0.25)) { lastPhoto = thumbnail }
+                        saves += 1
                         leaveDevelop()
-                        if !rawSaved {
-                            message = "Photo saved, but its RAW file wasn't."
-                        }
+                        // The shot is taken, so the guide has done its job.
+                        stopGuiding()
                     },
                     onDiscard: leaveDevelop
                 )
@@ -62,7 +68,7 @@ struct ContentView: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showingSettings) {
-            SettingsView(supportsRAW: camera.supportsRAW)
+            SettingsView()
         }
         .onChange(of: camera.errorMessage) { _, newMessage in
             if let newMessage {
@@ -76,6 +82,14 @@ struct ContentView: View {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             if !Task.isCancelled {
                 withAnimation(Theme.quick) { message = nil }
+            }
+        }
+        .task(id: isScanning) {
+            scanIsSlow = false
+            guard isScanning else { return }
+            try? await Task.sleep(nanoseconds: Self.slowScanDelay)
+            if !Task.isCancelled {
+                scanIsSlow = true
             }
         }
         .onAppear(perform: appear)
@@ -103,6 +117,7 @@ struct ContentView: View {
         .sensoryFeedback(.impact(weight: .light), trigger: camera.isCapturing) { _, capturing in
             capturing
         }
+        .sensoryFeedback(.success, trigger: saves)
         .onCameraCaptureEvent(isEnabled: camera.status == .ready) { event in
             if event.phase == .ended, camera.capturedPhoto == nil, !showingSettings {
                 takePhoto()
@@ -138,8 +153,9 @@ struct ContentView: View {
             HintView(
                 motion: motion,
                 isScanning: isScanning,
+                scanIsSlow: scanIsSlow,
                 message: message ?? camera.interruption,
-                isPaused: camera.capturedPhoto != nil
+                showsFirstHint: !hasScanned
             )
             .frame(minHeight: 64)
             .padding(.horizontal, 20)
@@ -147,14 +163,19 @@ struct ContentView: View {
             Spacer(minLength: 0)
 
             // Everything you touch sits here, within reach of your thumb.
-            HStack {
-                LensRow(camera: camera, motion: motion, iconAngle: iconAngle)
-                    .opacity(camera.lenses.isEmpty ? 0 : 1)
-                Spacer(minLength: 8)
-                optionsMenu
+            ZStack {
+                LensRow(camera: camera, motion: motion, iconAngle: iconAngle, isShown: isIdle)
+                    .opacity(isIdle && !camera.lenses.isEmpty ? 1 : 0)
+                    .allowsHitTesting(isIdle)
+                    .animation(Theme.quick, value: isIdle)
+
+                HStack {
+                    Spacer()
+                    optionsMenu
+                }
             }
             .padding(.horizontal, 32)
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
 
             controls
                 .padding(.horizontal, 32)
@@ -166,7 +187,7 @@ struct ContentView: View {
         ZStack {
             preview
                 .opacity(camera.isPreviewLive ? 1 : 0)
-                .animation(.easeIn(duration: 0.25), value: camera.isPreviewLive)
+                .animation(.easeOut(duration: 0.15), value: camera.isPreviewLive)
 
             gestureLayer
 
@@ -283,12 +304,12 @@ struct ContentView: View {
                 showingSettings = true
             }
         } label: {
-            Image(systemName: "slider.horizontal.3")
+            Image(systemName: "ellipsis")
                 .font(.title3.weight(.medium))
                 .foregroundStyle(.white)
                 .rotationEffect(.degrees(iconAngle))
-                .frame(width: 52, height: 52)
-                .background(Theme.control, in: Circle())
+                .frame(width: 52, height: 44)
+                .contentShape(Rectangle())
         }
         .accessibilityLabel("Options")
     }
@@ -316,6 +337,7 @@ struct ContentView: View {
         }
     }
 
+    /// Empty until a photo is saved: the app may add to Photos but not read from it.
     private var photoWell: some View {
         Button {
             if let url = URL(string: "photos-redirect://") {
@@ -327,12 +349,9 @@ struct ContentView: View {
                     Image(uiImage: lastPhoto)
                         .resizable()
                         .scaledToFill()
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                 } else {
-                    Image(systemName: "photo")
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(.white)
-                        .frame(width: 52, height: 52)
-                        .background(Theme.control)
+                    Color.clear
                 }
             }
             .frame(width: 52, height: 52)
@@ -340,6 +359,8 @@ struct ContentView: View {
             .rotationEffect(.degrees(iconAngle))
         }
         .buttonStyle(PressStyle())
+        .disabled(lastPhoto == nil)
+        .accessibilityHidden(lastPhoto == nil)
         .accessibilityLabel("Open Photos")
     }
 
@@ -368,6 +389,7 @@ struct ContentView: View {
         )
         .accessibilityElement()
         .accessibilityLabel("Take photo")
+        .accessibilityValue(motion.guide.isAligned ? "Lined up" : "")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { takePhoto() }
     }
@@ -469,7 +491,7 @@ struct ContentView: View {
     }
 
     private func takePhoto() {
-        camera.capturePhoto(rotationAngle: motion.captureRotationAngle, raw: rawEnabled && camera.supportsRAW)
+        camera.capturePhoto(rotationAngle: motion.captureRotationAngle)
     }
 
     private func blinkShutter() {
@@ -484,14 +506,14 @@ struct ContentView: View {
         if isIdle {
             startScan()
         } else if motion.guide.isAligned {
-            stopGuiding()
+            stopGuiding(restoringZoom: false)
             startScan()
         } else {
             stopGuiding()
         }
     }
 
-    private func stopGuiding() {
+    private func stopGuiding(restoringZoom: Bool = true) {
         scanTask?.cancel()
         scanTask = nil
         message = nil
@@ -499,6 +521,16 @@ struct ContentView: View {
             isScanning = false
             motion.setTarget(nil, optics: nil, crop: ratio.cropInViewfinder)
         }
+        if restoringZoom {
+            restoreZoom()
+        }
+    }
+
+    private func restoreZoom() {
+        if let zoom = zoomBeforeScan {
+            camera.zoom(to: zoom)
+        }
+        zoomBeforeScan = nil
     }
 
     private func startScan() {
@@ -513,6 +545,9 @@ struct ContentView: View {
 
         message = nil
         withAnimation(Theme.quick) { isScanning = true }
+        if zoomBeforeScan == nil {
+            zoomBeforeScan = camera.zoomDisplay
+        }
         let scanRatio = ratio
         camera.zoom(to: camera.lenses.first ?? 1, animated: false)
 
@@ -531,6 +566,7 @@ struct ContentView: View {
                     scanLens: camera.displayZoom(forFactor: frame.zoomFactor),
                     ratio: scanRatio
                 )
+                hasScanned = true
                 withAnimation(Theme.quick) {
                     isScanning = false
                     motion.setTarget(target, optics: optics, crop: scanRatio.cropInViewfinder)
@@ -542,6 +578,7 @@ struct ContentView: View {
             } catch {
                 guard !Task.isCancelled else { return }
                 withAnimation(Theme.quick) { isScanning = false }
+                restoreZoom()
                 message = error.localizedDescription
             }
         }
@@ -553,12 +590,13 @@ struct ContentView: View {
     }
 }
 
-/// The text below the viewfinder: what the shot is and what to do next.
+/// The text below the viewfinder: what the shot is and how to get it.
 private struct HintView: View {
     let motion: MotionTracker
     let isScanning: Bool
+    let scanIsSlow: Bool
     let message: String?
-    let isPaused: Bool
+    let showsFirstHint: Bool
 
     var body: some View {
         VStack(spacing: 2) {
@@ -567,21 +605,21 @@ private struct HintView: View {
                     .font(.subheadline)
                     .foregroundStyle(.primary)
             } else if isScanning {
-                Text("Finding your shot")
+                if scanIsSlow {
+                    Text("Still looking")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let target = motion.target {
+                Text(target.displayLabel)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(motion.guide.isBehind ? "Behind you" : target.tip)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if let target = motion.target {
-                HStack(spacing: 6) {
-                    LiveDirection(motion: motion, isPaused: isPaused || motion.guide.isAligned || motion.guide.isBehind)
-                        .fixedSize()
-                    Text(target.displayLabel)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                detail(for: target)
-            } else {
-                Text("Tap \(Image(systemName: "viewfinder")) to find a shot")
+            } else if showsFirstHint {
+                Text("Tap \(Image(systemName: "viewfinder")) to scan for a shot")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -591,87 +629,46 @@ private struct HintView: View {
         .frame(maxWidth: .infinity)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
-
-    @ViewBuilder
-    private func detail(for target: ScanTarget) -> some View {
-        if motion.guide.isBehind {
-            Text("Your shot is behind you")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        } else if motion.guide.isAligned {
-            Text("Ready")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
-        } else {
-            Text(target.tip)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
 }
 
-/// Zoom choices in one glass capsule. Kept apart so zooming only redraws this row.
+/// The zoom choices, kept apart so zooming only redraws this row.
 private struct LensRow: View {
     let camera: CameraController
     let motion: MotionTracker
     let iconAngle: Double
-
-    private struct Chip: Identifiable {
-        let value: Double
-        let isTarget: Bool
-        var id: Double { value }
-    }
+    let isShown: Bool
 
     private static let matchTolerance = 0.03
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(chips) { chip in
-                let isActive = chip.id == activeChip?.id
+            ForEach(camera.lenses, id: \.self) { lens in
+                let isActive = lens == activeLens
                 Button {
                     motion.noteZoomTaken()
-                    camera.zoom(to: chip.value)
+                    camera.zoom(to: lens)
                 } label: {
-                    Text(label(isActive ? camera.zoomDisplay : chip.value))
+                    Text(label(isActive ? camera.zoomDisplay : lens))
                         .font(.footnote.weight(isActive ? .semibold : .regular))
                         .monospacedDigit()
-                        .foregroundStyle(color(chip, isActive: isActive))
+                        .foregroundStyle(isActive ? .primary : .secondary)
                         .rotationEffect(.degrees(iconAngle))
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(chip.isTarget ? "Zoom to the shot" : "Zoom \(label(chip.value))")
+                .accessibilityLabel("Zoom \(label(lens))")
             }
         }
-        .padding(.horizontal, 4)
-        .frame(height: 52)
-        .background(Theme.control, in: Capsule())
-        .sensoryFeedback(.selection, trigger: activeChip?.id)
+        .sensoryFeedback(.selection, trigger: activeLens) { _, _ in
+            isShown
+        }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
-    /// The real lenses, plus the shot's exact zoom during a scan.
-    private var chips: [Chip] {
-        var chips = camera.lenses.map { Chip(value: $0, isTarget: false) }
-        if let lens = motion.target?.lens {
-            if let index = chips.firstIndex(where: { abs($0.value - lens) < 0.05 }) {
-                chips[index] = Chip(value: chips[index].value, isTarget: true)
-            } else {
-                chips.append(Chip(value: lens, isTarget: true))
-            }
-        }
-        return chips.sorted { $0.value < $1.value }
-    }
-
-    /// The chip that shows the live zoom: the nearest one at or below it, so pinching never moves the row.
-    private var activeChip: Chip? {
-        chips.last { $0.value <= camera.zoomDisplay + Self.matchTolerance } ?? chips.first
-    }
-
-    private func color(_ chip: Chip, isActive: Bool) -> Color {
-        if chip.isTarget { return .accentColor }
-        return isActive ? .primary : .secondary
+    /// The lens that shows the live zoom: the nearest one at or below it, so pinching never moves the row.
+    private var activeLens: Double? {
+        camera.lenses.last { $0 <= camera.zoomDisplay + Self.matchTolerance } ?? camera.lenses.first
     }
 
     private func label(_ lens: Double) -> String {

@@ -107,7 +107,7 @@ final class ScreenshotTests: XCTestCase {
     func testDevelopScreen() throws {
         let photo = CapturedPhoto(data: try samplePhoto())
         UserDefaults.standard.set(Look.kiln.rawValue, forKey: "develop.look")
-        UserDefaults.standard.set(0.35, forKey: "develop.grain")
+        UserDefaults.standard.set(GrainLevel.fine.rawValue, forKey: "develop.grain")
         UserDefaults.standard.set(PhotoFrame.mat.rawValue, forKey: "develop.frame")
         defer {
             for key in ["develop.look", "develop.grain", "develop.frame"] {
@@ -115,22 +115,22 @@ final class ScreenshotTests: XCTestCase {
             }
         }
         try capture("develop", delay: 10) {
-            DevelopView(photo: photo, ratio: .fourFive, onSaved: { _, _ in }, onDiscard: {})
+            DevelopView(photo: photo, ratio: .fourFive, onSaved: { _ in }, onDiscard: {})
         }
     }
 
     @MainActor
     func testKeyScreen() throws {
         try capture("settings") {
-            SettingsView(supportsRAW: true)
+            SettingsView()
         }
     }
 
     @MainActor
     func testGrainAtFullSize() throws {
-        let developer = try PhotoDeveloper(data: samplePhoto(), rawData: nil, ratio: .threeFour)
+        let developer = try PhotoDeveloper(data: samplePhoto(), ratio: .threeFour)
         var settings = DevelopSettings()
-        settings.grain = 0.5
+        settings.grain = .heavy
         settings.look = .cinder
         let image = try XCTUnwrap(developer.renderPreview(settings))
         try capture("grain") {

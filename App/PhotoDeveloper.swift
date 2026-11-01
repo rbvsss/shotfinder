@@ -47,13 +47,28 @@ enum Look: String, CaseIterable, Identifiable {
 }
 
 enum PhotoFrame: String, CaseIterable, Identifiable {
-    case none, border, mat, black
+    case none, border, mat
 
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+
+    var title: String {
+        switch self {
+        case .none: return "No Frame"
+        case .border: return "Border"
+        case .mat: return "Mat"
+        }
+    }
+
+    var next: PhotoFrame {
+        switch self {
+        case .none: return .border
+        case .border: return .mat
+        case .mat: return .none
+        }
+    }
 
     private var color: CIColor {
-        self == .black ? CIColor(red: 0.04, green: 0.04, blue: 0.04) : CIColor(red: 0.96, green: 0.95, blue: 0.92)
+        CIColor(red: 0.96, green: 0.95, blue: 0.92)
     }
 
     /// Margins as fractions of the photo's short edge: sides, top, bottom.
@@ -62,7 +77,6 @@ enum PhotoFrame: String, CaseIterable, Identifiable {
         case .none: return (0, 0, 0)
         case .border: return (0.025, 0.025, 0.025)
         case .mat: return (0.06, 0.06, 0.18)
-        case .black: return (0.03, 0.03, 0.03)
         }
     }
 
@@ -86,9 +100,37 @@ enum PhotoFrame: String, CaseIterable, Identifiable {
     }
 }
 
+enum GrainLevel: String {
+    case off, fine, heavy
+
+    var title: String {
+        switch self {
+        case .off: return "No Grain"
+        case .fine: return "Fine Grain"
+        case .heavy: return "Heavy Grain"
+        }
+    }
+
+    var next: GrainLevel {
+        switch self {
+        case .off: return .fine
+        case .fine: return .heavy
+        case .heavy: return .off
+        }
+    }
+
+    var amount: Double {
+        switch self {
+        case .off: return 0
+        case .fine: return 0.3
+        case .heavy: return 0.7
+        }
+    }
+}
+
 struct DevelopSettings: Equatable {
     var look: Look = .natural
-    var grain: Double = 0
+    var grain: GrainLevel = .off
     var frame: PhotoFrame = .none
 }
 
@@ -118,20 +160,28 @@ final class PhotoDeveloper {
     private let source: CIImage
     private let preview: CIImage
     private let thumbnail: CIImage
-    private let rawData: Data?
 
     private static let previewLongEdge = 1500
     private static let thumbnailLongEdge: CGFloat = 220
     /// Grain cells keep the same size relative to the photo, so the preview matches the saved file.
     private static let grainReferenceEdge: CGFloat = 1600
 
-    init(data: Data, rawData: Data?, ratio: CaptureRatio) throws {
+    /// A fast stand-in made from the viewfinder frame while the real photo is processed.
+    static func quickPreview(of placeholder: UIImage, settings: DevelopSettings, ratio: CaptureRatio) -> UIImage? {
+        guard let cgImage = placeholder.cgImage else { return nil }
+        var fast = settings
+        fast.grain = .off
+        let output = develop(crop(CIImage(cgImage: cgImage), to: ratio), fast)
+        guard let rendered = context.createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: rendered)
+    }
+
+    init(data: Data, ratio: CaptureRatio) throws {
         // The full photo stays undecoded until saving. The preview comes from one fast downsample.
         guard let decoded = CIImage(data: data, options: [.applyOrientationProperty: true]),
               let small = Self.downsampled(data, longEdge: Self.previewLongEdge) else {
             throw DevelopError.unreadable
         }
-        self.rawData = rawData
         source = Self.crop(decoded, to: ratio).settingProperties(Self.uprightProperties(decoded.properties))
 
         guard let previewImage = Self.flattened(Self.crop(CIImage(cgImage: small), to: ratio)) else {
@@ -166,9 +216,8 @@ final class PhotoDeveloper {
         return UIImage(cgImage: rendered)
     }
 
-    /// Writes the finished photo to the library, then the RAW file beside it if there is one.
-    /// Returns false when only the RAW file failed, so the finished photo is never lost to it.
-    func save(_ settings: DevelopSettings) async throws -> Bool {
+    /// Writes the finished photo to the library.
+    func save(_ settings: DevelopSettings) async throws {
         guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
             throw DevelopError.exportFailed
         }
@@ -189,26 +238,11 @@ final class PhotoDeveloper {
         } catch {
             throw DevelopError.saveFailed
         }
-
-        guard let rawData else { return true }
-        let rawFile = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).dng")
-        do {
-            try rawData.write(to: rawFile)
-            try await PHPhotoLibrary.shared().performChanges {
-                let options = PHAssetResourceCreationOptions()
-                options.shouldMoveFile = true
-                PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: rawFile, options: options)
-            }
-            return true
-        } catch {
-            try? FileManager.default.removeItem(at: rawFile)
-            return false
-        }
     }
 
     private static func develop(_ image: CIImage, _ settings: DevelopSettings) -> CIImage {
         let toned = settings.look.apply(to: image)
-        let grained = addGrain(to: toned, amount: settings.grain)
+        let grained = addGrain(to: toned, amount: settings.grain.amount)
         return settings.frame.apply(to: grained)
     }
 

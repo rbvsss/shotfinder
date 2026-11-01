@@ -1,10 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    let supportsRAW: Bool
-
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("camera.raw") private var rawEnabled = false
     @State private var apiKey = KeyStore.load() ?? ""
     @State private var message: String?
 
@@ -28,14 +25,6 @@ struct SettingsView: View {
                     Text("Claude")
                 } footer: {
                     Text(message ?? footer)
-                }
-
-                if supportsRAW {
-                    Section {
-                        Toggle("Save RAW", isOn: $rawEnabled)
-                    } footer: {
-                        Text("Also saves an Apple ProRAW file to Photos with each shot.")
-                    }
                 }
             }
             .navigationTitle("Settings")

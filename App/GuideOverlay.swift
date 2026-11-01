@@ -13,81 +13,68 @@ struct LiveGuide: View {
     }
 }
 
-/// An arrow pointing towards a shot that isn't centred yet.
-struct LiveDirection: View {
-    let motion: MotionTracker
-    let isPaused: Bool
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: isPaused)) { _ in
-            if let projection = motion.snapshot().projection, !projection.isCentered {
-                Image(systemName: "arrow.up")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .rotationEffect(.radians(atan2(projection.x - 0.5, 0.5 - projection.y)))
-                    .accessibilityHidden(true)
-            }
-        }
-    }
-}
-
-/// The level line and shot marks drawn over the viewfinder. They stay white, because blue
-/// vanishes against a blue sky. Being lined up is shown by a heavier line, the shutter and the text.
+/// Marks that lead to the shot and get out of the way. Corners show where it is, or a chevron points
+/// the way if it is out of view. Once you are lined up, the viewfinder is left empty.
 struct GuideOverlay: View {
     let roll: Double
     let projection: GuideProjection?
     let isAligned: Bool
 
+    /// How far inside the viewfinder's edge the chevron sits.
+    private static let chevronInset: CGFloat = 24
+
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            let center = CGPoint(x: size.width / 2, y: size.height / 2)
 
             ZStack {
                 if let projection {
-                    let target = CGPoint(x: projection.x * size.width, y: projection.y * size.height)
-
-                    if !projection.isCentered {
-                        Path { path in
-                            path.move(to: center)
-                            path.addLine(to: target)
+                    if projection.isInView {
+                        if !projection.isZoomed || !projection.isCentered {
+                            CornerMarks(arm: 18)
+                                .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                                .frame(width: projection.width * size.width, height: projection.height * size.height)
+                                .position(x: projection.x * size.width, y: projection.y * size.height)
                         }
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [0.1, 6]))
-                    }
-
-                    // Once the frame matches the shot, the marks have done their job.
-                    if !(projection.isCentered && projection.isZoomed) {
-                        CornerMarks(arm: 18)
-                            .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                            .frame(width: projection.width * size.width, height: projection.height * size.height)
-                            .position(target)
+                    } else {
+                        chevron(pointingTo: projection, in: size)
                     }
                 }
 
                 levelLine(width: size.width * 0.2)
-                    .position(center)
-
-                Capsule()
-                    .fill(Color.white)
-                    .frame(width: 1.5, height: 12)
-                    .position(center)
+                    .position(x: size.width / 2, y: size.height / 2)
             }
             .compositingGroup()
             .shadow(color: Theme.keyline, radius: 1)
+            .opacity(isAligned ? 0 : 1)
+            .animation(.easeOut(duration: 0.12), value: isAligned)
         }
         .clipped()
         .allowsHitTesting(false)
     }
 
+    private func chevron(pointingTo projection: GuideProjection, in size: CGSize) -> some View {
+        let dx = (projection.x - 0.5) * size.width
+        let dy = (projection.y - 0.5) * size.height
+        // Slides along the edge of the viewfinder, on the straight line towards the shot.
+        let reachX = size.width / 2 - Self.chevronInset
+        let reachY = size.height / 2 - Self.chevronInset
+        let scale = min(reachX / max(abs(dx), 1), reachY / max(abs(dy), 1))
+        return Image(systemName: "chevron.up")
+            .font(.title2.weight(.semibold))
+            .foregroundStyle(.white)
+            .rotationEffect(.radians(atan2(dx, -dy)))
+            .position(x: size.width / 2 + dx * scale, y: size.height / 2 + dy * scale)
+    }
+
     private func levelLine(width: CGFloat) -> some View {
-        let weight: CGFloat = isAligned ? 2.5 : 1.5
-        return HStack(spacing: 6) {
-            Capsule().frame(width: width * 0.14, height: weight)
-            Capsule().frame(width: width * 0.62, height: weight)
+        HStack(spacing: 6) {
+            Capsule().frame(width: width * 0.14, height: 1.5)
+            Capsule().frame(width: width * 0.62, height: 1.5)
                 .rotationEffect(.radians(-roll))
-            Capsule().frame(width: width * 0.14, height: weight)
+            Capsule().frame(width: width * 0.14, height: 1.5)
         }
-        .foregroundStyle(Color.white.opacity(isAligned ? 1 : 0.85))
+        .foregroundStyle(Color.white.opacity(0.85))
     }
 }
 

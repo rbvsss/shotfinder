@@ -66,12 +66,11 @@ final class FlowTests: XCTestCase {
         app.buttons["Scan for a shot"].tap()
         expectText("Distant church spires")
         shoot("e2e-10-guided")
-        expectText("Ready", timeout: 5)
-        XCTAssertTrue(app.buttons["Scan again"].exists)
+        XCTAssertTrue(app.buttons["Scan again"].waitForExistence(timeout: 5))
         shoot("e2e-11-ready")
 
         app.buttons["Scan again"].tap()
-        expectText("Ready", timeout: 8)
+        XCTAssertTrue(app.buttons["Scan again"].waitForExistence(timeout: 8))
 
         app.buttons["Take photo"].tap()
         let save = app.buttons["Save"]
@@ -84,19 +83,24 @@ final class FlowTests: XCTestCase {
         sleep(1)
         shoot("e2e-13-cinder")
 
-        app.buttons["Grain"].tap()
-        app.sliders["Grain"].adjust(toNormalizedSliderPosition: 0.5)
+        app.buttons["Grain, No Grain"].tap()
+        XCTAssertTrue(app.buttons["Grain, Fine Grain"].waitForExistence(timeout: 3))
         sleep(1)
         shoot("e2e-14-grain")
 
-        app.buttons["Frame"].tap()
-        app.buttons["Mat"].tap()
+        app.buttons["Frame, No Frame"].tap()
+        app.buttons["Frame, Border"].tap()
+        XCTAssertTrue(app.buttons["Frame, Mat"].waitForExistence(timeout: 3))
         sleep(1)
         shoot("e2e-15-frame")
 
+        let photo = app.images["Photo with Cinder look"]
+        XCTAssertTrue(photo.exists)
+        photo.press(forDuration: 1.0)
+
         save.tap()
         allowPhotosIfAsked()
-        XCTAssertTrue(app.buttons["Scan again"].waitForExistence(timeout: 10) || app.buttons["Stop guiding"].exists)
+        XCTAssertTrue(app.buttons["Scan for a shot"].waitForExistence(timeout: 10), "The guide should clear after saving")
         shoot("e2e-16-back-to-camera")
     }
 
@@ -108,14 +112,13 @@ final class FlowTests: XCTestCase {
     func testDiscardReturnsToCameraAndStaysGone() throws {
         try launch()
         app.buttons["Take photo"].tap()
-        let discard = app.buttons["Discard"]
-        XCTAssertTrue(discard.waitForExistence(timeout: 5))
-        discard.tap()
+        let retake = app.buttons["Retake"]
+        XCTAssertTrue(retake.waitForExistence(timeout: 5))
+        retake.tap()
+        XCTAssertTrue(app.buttons["Discard Photo"].waitForExistence(timeout: 3))
         sleep(1)
         shoot("e2e-20-discard-dialog")
-        let buttons = app.buttons.matching(identifier: "Discard").allElementsBoundByIndex
-        XCTAssertGreaterThanOrEqual(buttons.count, 2)
-        buttons.last?.tap()
+        app.buttons["Discard Photo"].tap()
         XCTAssertTrue(app.buttons["Scan for a shot"].waitForExistence(timeout: 5))
         sleep(2)
         XCTAssertFalse(app.buttons["Save"].exists, "A discarded photo came back")
@@ -127,7 +130,7 @@ final class FlowTests: XCTestCase {
         expectText("Keep the horizon low")
         sleep(1)
         shoot("e2e-30-off-center")
-        XCTAssertFalse(app.staticTexts["Ready"].exists)
+        XCTAssertFalse(app.buttons["Scan again"].exists)
         app.buttons["Stop guiding"].tap()
         XCTAssertTrue(app.buttons["Scan for a shot"].waitForExistence(timeout: 3))
     }
@@ -139,7 +142,6 @@ final class FlowTests: XCTestCase {
         sleep(1)
         shoot("e2e-40-settings-no-key")
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Add your Claude API key'")).firstMatch.exists)
-        XCTAssertTrue(app.switches["Save RAW"].exists)
         app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["Scan for a shot"].waitForExistence(timeout: 3))
     }
