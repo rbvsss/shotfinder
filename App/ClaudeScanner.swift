@@ -5,7 +5,7 @@ struct ScanFrame {
     let jpeg: Data
     let width: Int
     let height: Int
-    var zoomFactor: Double = 1
+    let zoomFactor: Double
 }
 
 /// The shot Claude picked. Coordinates are fractions of the image, measured from the top left.
@@ -19,7 +19,6 @@ struct ScanResult {
 }
 
 enum ScanError: LocalizedError {
-    case missingKey
     case rejectedKey
     case noCredits
     case busy
@@ -33,7 +32,6 @@ enum ScanError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cameraNotReady: return "The camera isn't ready. Try again."
-        case .missingKey: return "Add your Claude API key to scan."
         case .rejectedKey: return "Claude didn't accept this API key."
         case .noCredits: return "Your Claude API credits have run out."
         case .busy: return "Claude is busy. Try again in a moment."
@@ -41,7 +39,7 @@ enum ScanError: LocalizedError {
         case .timedOut: return "The scan took too long. Try again."
         case .api(let message): return message
         case .refused: return "Claude declined to scan this scene."
-        case .badResponse: return "The scan didn't come back right. Try again."
+        case .badResponse: return "The scan failed. Try again."
         }
     }
 }

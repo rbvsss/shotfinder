@@ -48,7 +48,7 @@ final class MotionTracker {
     private static let maxStep: TimeInterval = 0.2
     /// How far past a quarter turn the phone must go before icons and photos follow, to stop flicker.
     private static let turnThreshold = 55.0 * Double.pi / 180
-    static let levelTolerance = 1.5 * Double.pi / 180
+    private static let levelTolerance = 1.5 * Double.pi / 180
     private static let alignedLevelTolerance = 2.5 * Double.pi / 180
 
     func start() {
@@ -149,15 +149,17 @@ final class MotionTracker {
 
     /// Applies a change, then tells the screen only if something it shows has changed.
     private func refreshGuide(_ change: (inout Live) -> Void) {
-        let changed: GuideState? = lock.withLock {
+        let changed: Bool = lock.withLock {
+            let previous = live.guide
             change(&live)
-            let next = Self.derive(from: live)
-            guard next != live.guide else { return nil }
-            live.guide = next
-            return next
+            live.guide = Self.derive(from: live)
+            return live.guide != previous
         }
-        if let changed {
-            DispatchQueue.main.async { self.guide = changed }
+        if changed {
+            // Reads the newest value on arrival, so a late update can't overwrite a newer one.
+            DispatchQueue.main.async {
+                self.guide = self.lock.withLock { self.live.guide }
+            }
         }
     }
 

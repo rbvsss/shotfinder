@@ -27,7 +27,6 @@ struct DevelopView: View {
     @State private var confirmingDiscard = false
     @State private var pendingRender: DevelopSettings?
     @State private var isRendering = false
-    @State private var hasLoadedSettings = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -206,14 +205,17 @@ struct DevelopView: View {
                 Group {
                     if isSaving {
                         ProgressView()
+                            .tint(.black)
                     } else {
                         Text("Save")
                             .fontWeight(.semibold)
                     }
                 }
+                .foregroundStyle(.black)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .tint(.white)
             .disabled(isSaving || developer == nil)
         }
         .controlSize(.large)
@@ -222,8 +224,6 @@ struct DevelopView: View {
     }
 
     private func loadSettings() {
-        guard !hasLoadedSettings else { return }
-        hasLoadedSettings = true
         settings = DevelopSettings(
             look: Look(rawValue: savedLook) ?? .natural,
             grain: min(max(savedGrain, 0), 1),

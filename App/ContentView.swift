@@ -21,10 +21,10 @@ struct ContentView: View {
     @State private var message: String?
     @State private var showingSettings = false
     @State private var lastPhoto: UIImage?
-    @State private var pinchStartZoom: Double?
+    @GestureState private var pinchStartZoom: Double?
     @State private var focusPoint: CGPoint?
     @State private var shutterBlink = false
-    @State private var shutterDown = false
+    @GestureState private var shutterHeld = false
     @State private var iconAngle = 0.0
     @State private var idleStop: Task<Void, Never>?
 
@@ -61,7 +61,7 @@ struct ContentView: View {
         .animation(Theme.quick, value: camera.capturedPhoto?.id)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
-        .sheet(isPresented: $showingSettings, onDismiss: { message = nil }) {
+        .sheet(isPresented: $showingSettings) {
             SettingsView(supportsRAW: camera.supportsRAW)
         }
         .onChange(of: camera.errorMessage) { _, newMessage in
@@ -98,13 +98,13 @@ struct ContentView: View {
             blinkShutter()
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: motion.guide.isAligned) { _, aligned in
-            aligned
+            aligned && camera.capturedPhoto == nil
         }
         .sensoryFeedback(.impact(weight: .light), trigger: camera.isCapturing) { _, capturing in
             capturing
         }
-        .onCameraCaptureEvent(isEnabled: camera.capturedPhoto == nil && camera.status == .ready) { event in
-            if event.phase == .ended {
+        .onCameraCaptureEvent(isEnabled: camera.status == .ready) { event in
+            if event.phase == .ended, camera.capturedPhoto == nil, !showingSettings {
                 takePhoto()
             }
         }
@@ -146,6 +146,16 @@ struct ContentView: View {
 
             Spacer(minLength: 0)
 
+            // Everything you touch sits here, within reach of your thumb.
+            HStack {
+                LensRow(camera: camera, motion: motion, iconAngle: iconAngle)
+                    .opacity(camera.lenses.isEmpty ? 0 : 1)
+                Spacer(minLength: 8)
+                optionsMenu
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 12)
+
             controls
                 .padding(.horizontal, 32)
                 .padding(.bottom, 12)
@@ -168,7 +178,7 @@ struct ContentView: View {
             }
 
             if isScanning {
-                ScanBrackets()
+                ScanBrackets(crop: ratio.cropInViewfinder)
                     .transition(.opacity)
             }
 
@@ -179,13 +189,20 @@ struct ContentView: View {
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
         .clipped()
-        .overlay(alignment: .top) { topControls }
-        .overlay(alignment: .bottom) {
-            if !camera.lenses.isEmpty {
-                LensRow(camera: camera, motion: motion, iconAngle: iconAngle)
-                    .padding(.bottom, 12)
-                    .transition(.opacity)
-            }
+        .overlay(alignment: .topLeading) { flashIndicator }
+    }
+
+    @ViewBuilder
+    private var flashIndicator: some View {
+        if camera.flashMode != .off {
+            Image(systemName: camera.flashMode == .on ? "bolt.fill" : "bolt.badge.automatic.fill")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.white)
+                .shadow(color: Theme.keyline, radius: 1)
+                .rotationEffect(.degrees(iconAngle))
+                .padding(16)
+                .accessibilityLabel(camera.flashMode == .on ? "Flash on" : "Flash auto")
+                .transition(.opacity)
         }
     }
 
@@ -229,34 +246,12 @@ struct ContentView: View {
 
     private var pinchGesture: some Gesture {
         MagnifyGesture()
-            .onChanged { value in
-                let start = pinchStartZoom ?? camera.zoomDisplay
-                pinchStartZoom = start
+            .updating($pinchStartZoom) { value, start, _ in
+                let origin = start ?? camera.zoomDisplay
+                start = origin
                 motion.noteZoomTaken()
-                camera.zoom(to: start * value.magnification, animated: false)
+                camera.zoom(to: origin * value.magnification, animated: false)
             }
-            .onEnded { _ in
-                pinchStartZoom = nil
-            }
-    }
-
-    private var topControls: some View {
-        HStack {
-            if camera.flashMode != .off {
-                Image(systemName: camera.flashMode == .on ? "bolt.fill" : "bolt.badge.automatic.fill")
-                    .font(.body.weight(.medium))
-                    .rotationEffect(.degrees(iconAngle))
-                    .frame(width: 44, height: 44)
-                    .glassEffect(.regular, in: .circle)
-                    .accessibilityLabel(camera.flashMode == .on ? "Flash on" : "Flash auto")
-                    .transition(.opacity)
-            }
-
-            Spacer()
-
-            optionsMenu
-        }
-        .padding(12)
     }
 
     private var optionsMenu: some View {
@@ -289,11 +284,11 @@ struct ContentView: View {
             }
         } label: {
             Image(systemName: "slider.horizontal.3")
-                .font(.body.weight(.medium))
+                .font(.title3.weight(.medium))
                 .foregroundStyle(.white)
                 .rotationEffect(.degrees(iconAngle))
-                .frame(width: 44, height: 44)
-                .glassEffect(.regular.interactive(), in: .circle)
+                .frame(width: 52, height: 52)
+                .background(Theme.control, in: Circle())
         }
         .accessibilityLabel("Options")
     }
@@ -333,14 +328,18 @@ struct ContentView: View {
                         .resizable()
                         .scaledToFill()
                 } else {
-                    Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                    Image(systemName: "photo")
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                        .background(Theme.control)
                 }
             }
             .frame(width: 52, height: 52)
             .clipShape(Circle())
             .rotationEffect(.degrees(iconAngle))
         }
-        .disabled(lastPhoto == nil)
+        .buttonStyle(PressStyle())
         .accessibilityLabel("Open Photos")
     }
 
@@ -352,24 +351,23 @@ struct ContentView: View {
             Circle()
                 .fill(Color.white)
                 .frame(width: 64, height: 64)
-                .scaleEffect(shutterDown ? 0.9 : 1)
-                .animation(Theme.quick, value: shutterDown)
+                .scaleEffect(shutterHeld ? 0.9 : 1)
+                .animation(Theme.quick, value: shutterHeld)
         }
         .frame(width: 84, height: 84)
         .contentShape(Circle())
         // Fires on touch down, so the moment you press is the moment you get.
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !shutterDown {
-                        shutterDown = true
-                        takePhoto()
-                    }
-                }
-                .onEnded { _ in
-                    shutterDown = false
+                .updating($shutterHeld) { _, held, _ in
+                    held = true
                 }
         )
+        .onChange(of: shutterHeld) { _, held in
+            if held {
+                takePhoto()
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel("Take photo")
         .accessibilityAddTraits(.isButton)
@@ -447,7 +445,7 @@ struct ContentView: View {
 
     private func leaveDevelop() {
         camera.setRunning(true)
-        camera.capturedPhoto = nil
+        camera.closePhoto()
     }
 
     private func rotateIcons(toQuarterTurns turns: Int) {
@@ -511,16 +509,14 @@ struct ContentView: View {
             return
         }
         guard let apiKey = KeyStore.load() else {
-            message = ScanError.missingKey.errorDescription
             showingSettings = true
             return
         }
 
         message = nil
         withAnimation(Theme.quick) { isScanning = true }
-        let scanLens = camera.lenses.first ?? 1
         let scanRatio = ratio
-        camera.zoom(to: scanLens, animated: false)
+        camera.zoom(to: camera.lenses.first ?? 1, animated: false)
 
         scanTask = Task {
             do {
@@ -534,7 +530,7 @@ struct ContentView: View {
                     result: result,
                     optics: optics,
                     scanZoomFactor: frame.zoomFactor,
-                    scanLens: scanLens,
+                    scanLens: camera.displayZoom(forFactor: frame.zoomFactor),
                     ratio: scanRatio
                 )
                 withAnimation(Theme.quick) {
@@ -546,6 +542,7 @@ struct ContentView: View {
             } catch let error as URLError where error.code == .cancelled {
                 return
             } catch {
+                guard !Task.isCancelled else { return }
                 withAnimation(Theme.quick) { isScanning = false }
                 message = error.localizedDescription
             }
@@ -576,13 +573,17 @@ private struct HintView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else if let target = motion.target {
-                Text(target.displayLabel)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    LiveDirection(motion: motion, isPaused: isPaused || motion.guide.isAligned || motion.guide.isBehind)
+                        .fixedSize()
+                    Text(target.displayLabel)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
                 detail(for: target)
             } else {
-                Text("Tap the viewfinder button to find a shot")
+                Text("Tap \(Image(systemName: "viewfinder")) to find a shot")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -604,13 +605,9 @@ private struct HintView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
         } else {
-            HStack(spacing: 6) {
-                LiveDirection(motion: motion, isPaused: isPaused)
-                    .fixedSize()
-                Text(target.tip)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            Text(target.tip)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -642,7 +639,7 @@ private struct LensRow: View {
                         .monospacedDigit()
                         .foregroundStyle(color(chip, isActive: isActive))
                         .rotationEffect(.degrees(iconAngle))
-                        .frame(minWidth: 48, minHeight: 40)
+                        .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -650,7 +647,8 @@ private struct LensRow: View {
             }
         }
         .padding(.horizontal, 4)
-        .glassEffect(.regular, in: .capsule)
+        .frame(height: 52)
+        .background(Theme.control, in: Capsule())
         .sensoryFeedback(.selection, trigger: activeChip?.id)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
@@ -679,10 +677,10 @@ private struct LensRow: View {
     }
 
     private func label(_ lens: Double) -> String {
+        if abs(lens - lens.rounded()) < 0.05 { return "\(Int(lens.rounded()))x" }
         if lens < 1 {
             return String(String(format: "%.1f", lens).dropFirst()) + "x"
         }
-        if abs(lens - lens.rounded()) < 0.05 { return "\(Int(lens.rounded()))x" }
         return String(format: "%.1fx", lens)
     }
 }

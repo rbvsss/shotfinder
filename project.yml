@@ -26,7 +26,6 @@ targets:
       properties:
         CFBundleDisplayName: ShotFinder
         UILaunchScreen: {}
-        UIRequiresFullScreen: true
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

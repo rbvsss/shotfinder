@@ -19,7 +19,6 @@ enum KeyStore {
         return String(data: data, encoding: .utf8)
     }
 
-    @discardableResult
     static func save(_ key: String) -> Bool {
         delete()
         var attributes = query

@@ -68,6 +68,7 @@ final class CameraController: NSObject {
     @ObservationIgnored private var rawData: Data?
     @ObservationIgnored private var rawRequested = false
     @ObservationIgnored private var captureIsUpright = true
+    @ObservationIgnored private var discardsCurrentCapture = false
 
     private static let scanLongEdge: CGFloat = 1200
     private static let placeholderLongEdge: CGFloat = 1200
@@ -141,10 +142,6 @@ final class CameraController: NSObject {
                 connection.videoRotationAngle = 90
             }
             photoOutput.isAppleProRAWEnabled = photoOutput.isAppleProRAWSupported
-            // Lets a shot taken while the last one is still finishing begin straight away.
-            if photoOutput.isResponsiveCaptureSupported {
-                photoOutput.isResponsiveCaptureEnabled = true
-            }
             session.commitConfiguration()
             let rawAvailable = photoOutput.isAppleProRAWEnabled
 
@@ -172,7 +169,11 @@ final class CameraController: NSObject {
             }
 
             session.startRunning()
-            photoOutput.setPreparedPhotoSettingsArray([makeSettings(raw: false)]) { _, _ in }
+            var prepared = [makeSettings(raw: false)]
+            if rawAvailable {
+                prepared.append(makeSettings(raw: true))
+            }
+            photoOutput.setPreparedPhotoSettingsArray(prepared) { _, _ in }
             DispatchQueue.main.async { self.isPreviewLive = true }
         }
     }
@@ -227,13 +228,24 @@ final class CameraController: NSObject {
     /// Pauses the camera after a long stay on the develop screen, to save heat and battery.
     func setRunning(_ running: Bool) {
         sessionQueue.async { [self] in
-            guard device != nil, session.isRunning != running else { return }
-            if running {
-                session.startRunning()
-            } else {
+            guard device != nil else { return }
+            if !running {
                 session.stopRunning()
+            } else if !session.isRunning {
+                session.startRunning()
             }
         }
+    }
+
+    /// Leaves the develop screen. A shot still processing is thrown away when it finishes.
+    func closePhoto() {
+        discardsCurrentCapture = isCapturing
+        capturedPhoto = nil
+    }
+
+    /// The zoom as shown on the lens buttons for a raw zoom factor.
+    func displayZoom(forFactor factor: Double) -> Double {
+        factor / wideFactor
     }
 
     private static func bestBackCamera() -> AVCaptureDevice? {
@@ -405,6 +417,10 @@ final class CameraController: NSObject {
         rawRequested = false
         DispatchQueue.main.async {
             self.isCapturing = false
+            if self.discardsCurrentCapture {
+                self.discardsCurrentCapture = false
+                return
+            }
             guard let data else {
                 self.capturedPhoto = nil
                 self.errorMessage = error ?? "Couldn't take the photo."

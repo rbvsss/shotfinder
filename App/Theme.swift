@@ -4,7 +4,7 @@ enum Theme {
     /// Dims what falls outside the chosen ratio while keeping the scene readable.
     static let mask = Color.black.opacity(0.72)
     /// A tight dark edge that keeps white marks readable over a bright sky.
-    static let keyline = Color.black.opacity(0.6)
+    static let keyline = Color.black.opacity(0.75)
     /// The background of round controls on the black area below the viewfinder.
     static let control = Color.white.opacity(0.14)
     static let quick = Animation.easeOut(duration: 0.18)

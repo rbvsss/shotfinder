@@ -52,7 +52,7 @@ final class ClaudeScannerTests: XCTestCase {
     }
 
     private func scan() async throws -> ScanResult {
-        let frame = ScanFrame(jpeg: Data([1, 2, 3]), width: 900, height: 1200)
+        let frame = ScanFrame(jpeg: Data([1, 2, 3]), width: 900, height: 1200, zoomFactor: 1)
         return try await ClaudeScanner.scan(frame: frame, ratio: .square, apiKey: "test-key")
     }
 

@@ -93,7 +93,7 @@ final class ScreenshotTests: XCTestCase {
                 ZStack {
                     Image(uiImage: photo).resizable().scaledToFill()
                     RatioMask(crop: CaptureRatio.fourFive.cropInViewfinder)
-                    ScanBrackets()
+                    ScanBrackets(crop: CaptureRatio.fourFive.cropInViewfinder)
                 }
                 .aspectRatio(0.75, contentMode: .fit)
                 .clipped()

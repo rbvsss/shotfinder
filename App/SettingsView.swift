@@ -27,7 +27,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Claude")
                 } footer: {
-                    Text(message ?? "Scanning uses your key and your credits. The key stays in this iPhone's Keychain and only goes to Claude.")
+                    Text(message ?? footer)
                 }
 
                 if supportsRAW {
@@ -41,16 +41,19 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
+                    Button("Done", action: save)
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private var footer: String {
+        apiKey.isEmpty
+            ? "Add your Claude API key to scan. It stays in this iPhone's Keychain and only goes to Claude."
+            : "Scans use your key and your credits. It stays in this iPhone's Keychain and only goes to Claude."
     }
 
     private func save() {

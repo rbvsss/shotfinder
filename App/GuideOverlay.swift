@@ -31,15 +31,12 @@ struct LiveDirection: View {
     }
 }
 
-/// The level line, crosshair and shot marks drawn over the viewfinder.
+/// The level line and shot marks drawn over the viewfinder. They stay white, because blue
+/// vanishes against a blue sky. Being lined up is shown by a heavier line, the shutter and the text.
 struct GuideOverlay: View {
     let roll: Double
     let projection: GuideProjection?
     let isAligned: Bool
-
-    private var markColor: Color {
-        isAligned ? .accentColor : .white
-    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -55,24 +52,27 @@ struct GuideOverlay: View {
                             path.move(to: center)
                             path.addLine(to: target)
                         }
-                        .stroke(Color.white.opacity(0.7), style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 5]))
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [0.1, 6]))
                     }
 
                     // Once the frame matches the shot, the marks have done their job.
                     if !(projection.isCentered && projection.isZoomed) {
                         CornerMarks(arm: 18)
-                            .stroke(markColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                             .frame(width: projection.width * size.width, height: projection.height * size.height)
                             .position(target)
                     }
                 }
 
-                levelLine(width: size.width * 0.3)
+                levelLine(width: size.width * 0.2)
                     .position(center)
 
-                crosshair
+                Capsule()
+                    .fill(Color.white)
+                    .frame(width: 1.5, height: 12)
                     .position(center)
             }
+            .compositingGroup()
             .shadow(color: Theme.keyline, radius: 1)
         }
         .clipped()
@@ -80,21 +80,14 @@ struct GuideOverlay: View {
     }
 
     private func levelLine(width: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            Capsule().frame(width: width * 0.16, height: 1.5)
-            Capsule().frame(width: width * 0.68, height: 1.5)
+        let weight: CGFloat = isAligned ? 2.5 : 1.5
+        return HStack(spacing: 6) {
+            Capsule().frame(width: width * 0.14, height: weight)
+            Capsule().frame(width: width * 0.62, height: weight)
                 .rotationEffect(.radians(-roll))
-            Capsule().frame(width: width * 0.16, height: 1.5)
+            Capsule().frame(width: width * 0.14, height: weight)
         }
-        .foregroundStyle(markColor)
-    }
-
-    private var crosshair: some View {
-        ZStack {
-            Capsule().frame(width: 12, height: 1.5)
-            Capsule().frame(width: 1.5, height: 12)
-        }
-        .foregroundStyle(markColor)
+        .foregroundStyle(Color.white.opacity(isAligned ? 1 : 0.85))
     }
 }
 
@@ -142,23 +135,29 @@ struct RatioMask: View {
     }
 }
 
-/// Corner marks that breathe while a scan is running.
+/// Corner marks around the chosen frame that breathe while a scan is running.
 struct ScanBrackets: View {
+    let crop: CGSize
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dimmed = false
 
     var body: some View {
-        CornerMarks(arm: 28)
-            .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-            .padding(18)
-            .shadow(color: Theme.keyline, radius: 1)
-            .opacity(reduceMotion ? 0.7 : (dimmed ? 0.3 : 1))
-            .allowsHitTesting(false)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    dimmed = true
-                }
+        GeometryReader { geometry in
+            CornerMarks(arm: 28)
+                .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                .padding(18)
+                .frame(width: geometry.size.width * crop.width, height: geometry.size.height * crop.height)
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+        }
+        .shadow(color: Theme.keyline, radius: 1)
+        .opacity(reduceMotion ? 0.7 : (dimmed ? 0.45 : 1))
+        .allowsHitTesting(false)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                dimmed = true
             }
+        }
     }
 }
