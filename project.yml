@@ -12,6 +12,7 @@ targets:
     scheme:
       testTargets:
         - ShotFinderTests
+        - ShotFinderUITests
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vault.shotfinder
@@ -31,6 +32,21 @@ targets:
           - UIInterfaceOrientationPortrait
         NSCameraUsageDescription: ShotFinder uses the camera to take photos and scan the scene.
         NSPhotoLibraryAddUsageDescription: ShotFinder saves the photos you take to your library.
+  ShotFinderUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+      - path: Tests/sample.jpg
+        buildPhase: resources
+    dependencies:
+      - target: ShotFinder
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: com.vault.shotfinder.uitests
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
   ShotFinderTests:
     type: bundle.unit-test
     platform: iOS

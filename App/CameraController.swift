@@ -84,10 +84,39 @@ final class CameraController: NSObject {
         supportsRAW = true
         hasFlash = true
         isPreviewLive = true
+        wideFactor = 2
+        minimumFactor = 1
+        maximumFactor = 30
+        stagedFactor = 2
+        optics = CameraOptics(tanHorizontal: 0.75, tanVertical: 1)
         status = .ready
     }
     @ObservationIgnored private(set) var isStaged = false
     @ObservationIgnored private(set) var stagedBackdrop: UIImage?
+    @ObservationIgnored private var stagedFactor = 2.0
+
+    private func stagedZoom(to factor: Double) {
+        stagedFactor = factor
+        zoomDisplay = factor / wideFactor
+        onZoomFactorChange?(factor)
+    }
+
+    private func stagedScanFrame() -> ScanFrame {
+        ScanFrame(jpeg: stagedBackdrop?.jpegData(compressionQuality: 0.8) ?? Data(), width: 900, height: 1200, zoomFactor: stagedFactor)
+    }
+
+    private func stagedCapture() {
+        isCapturing = true
+        shutterBlinks &+= 1
+        let data = stagedBackdrop?.jpegData(compressionQuality: 0.9)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.capturedPhoto = CapturedPhoto(placeholder: self.stagedBackdrop)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            self.isCapturing = false
+            self.capturedPhoto?.data = data
+        }
+    }
     #endif
 
     func start() {
@@ -286,6 +315,12 @@ final class CameraController: NSObject {
     /// Moves to a zoom given as shown on the lens buttons, where 1 is the main camera.
     func zoom(to display: Double, animated: Bool = true, rate: Float = 8) {
         let factor = min(max(display * wideFactor, minimumFactor), maximumFactor)
+        #if DEBUG
+        if isStaged {
+            stagedZoom(to: factor)
+            return
+        }
+        #endif
         sessionQueue.async { [self] in
             setZoomFactor(factor, animated: animated, rate: rate)
         }
@@ -340,7 +375,13 @@ final class CameraController: NSObject {
     /// Returns the next video frame as a portrait JPEG small enough to send for scanning.
     /// `onFrame` runs at the moment the frame arrives, before the slower encoding work.
     func captureScanFrame(onFrame: @escaping () -> Void) async throws -> ScanFrame {
-        try await withTaskCancellationHandler {
+        #if DEBUG
+        if isStaged {
+            onFrame()
+            return stagedScanFrame()
+        }
+        #endif
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 videoQueue.async {
                     self.failPendingFrame(with: CancellationError())
@@ -370,6 +411,12 @@ final class CameraController: NSObject {
 
     func capturePhoto(rotationAngle: CGFloat, raw: Bool) {
         guard !isCapturing else { return }
+        #if DEBUG
+        if isStaged {
+            stagedCapture()
+            return
+        }
+        #endif
         isCapturing = true
         let flash = flashMode
         sessionQueue.async { [self] in

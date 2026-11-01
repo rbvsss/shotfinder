@@ -360,14 +360,12 @@ struct ContentView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($shutterHeld) { _, held, _ in
+                    if !held {
+                        takePhoto()
+                    }
                     held = true
                 }
         )
-        .onChange(of: shutterHeld) { _, held in
-            if held {
-                takePhoto()
-            }
-        }
         .accessibilityElement()
         .accessibilityLabel("Take photo")
         .accessibilityAddTraits(.isButton)

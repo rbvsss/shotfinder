@@ -10,6 +10,9 @@ enum KeyStore {
     ]
 
     static func load() -> String? {
+        #if DEBUG
+        if Staging.hasKey { return "staged-key" }
+        #endif
         var lookup = query
         lookup[kSecReturnData as String] = true
         lookup[kSecMatchLimit as String] = kSecMatchLimitOne
