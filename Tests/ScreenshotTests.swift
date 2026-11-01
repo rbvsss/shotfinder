@@ -5,6 +5,7 @@ import XCTest
 /// Renders the real screens on a simulator and writes them out, so the design can be checked by eye.
 final class ScreenshotTests: XCTestCase {
     private static let outputDirectory = URL(fileURLWithPath: "/tmp/shotfinder-screens")
+    private let optics = CameraOptics(tanHorizontal: 0.75, tanVertical: 1)
 
     private var window: UIWindow?
 
@@ -37,37 +38,74 @@ final class ScreenshotTests: XCTestCase {
     }
 
     @MainActor
-    func testCameraScreen() throws {
+    private func stagedCamera() throws -> CameraController {
         let camera = CameraController()
-        camera.stageForScreenshots(lenses: [0.5, 1, 2, 5], supportsRAW: true)
+        camera.stageForScreenshots(lenses: [0.5, 1, 2, 4, 8], backdrop: UIImage(data: try samplePhoto()))
+        return camera
+    }
+
+    private func target(x: Double, y: Double, size: Double) -> ScanTarget {
+        ScanTarget(
+            result: ScanResult(label: "distant church spires", tip: "Keep the horizon low", centerX: x, centerY: y, size: size),
+            optics: optics,
+            scanZoomFactor: 1,
+            scanLens: 0.5,
+            ratio: .threeFour
+        )
+    }
+
+    @MainActor
+    func testCameraScreen() throws {
+        let camera = try stagedCamera()
         try capture("camera") {
-            ContentView(camera: camera)
+            ContentView(camera: camera, motion: MotionTracker())
         }
     }
 
     @MainActor
-    func testGuideOnPhoto() throws {
+    func testGuiding() throws {
+        let camera = try stagedCamera()
+        let motion = MotionTracker()
+        motion.setTarget(target(x: 0.66, y: 0.64, size: 0.34), optics: optics, crop: CaptureRatio.threeFour.cropInViewfinder)
+        motion.noteZoomTaken()
+        try capture("guiding") {
+            ContentView(camera: camera, motion: motion)
+        }
+    }
+
+    @MainActor
+    func testReady() throws {
+        let camera = try stagedCamera()
+        let motion = MotionTracker()
+        motion.setTarget(target(x: 0.5, y: 0.5, size: 0.5), optics: optics, crop: CaptureRatio.threeFour.cropInViewfinder)
+        motion.noteZoomTaken()
+        motion.setZoomFactor(2)
+        try capture("ready") {
+            ContentView(camera: camera, motion: motion)
+        }
+    }
+
+    @MainActor
+    func testScanMarks() throws {
         let photo = try XCTUnwrap(UIImage(data: samplePhoto()))
-        let projection = GuideProjection(x: 0.62, y: 0.42, width: 0.3, height: 0.3, fill: 0.3)
-        try capture("guide") {
+        try capture("scanning") {
             VStack {
                 ZStack {
                     Image(uiImage: photo).resizable().scaledToFill()
                     RatioMask(crop: CaptureRatio.fourFive.cropInViewfinder)
-                    GuideOverlay(roll: 0.07, projection: projection, isAligned: false)
                     ScanBrackets()
                 }
                 .aspectRatio(0.75, contentMode: .fit)
                 .clipped()
                 Spacer()
             }
-            .background(Theme.ink)
+            .background(Color.black)
         }
     }
 
     @MainActor
     func testDevelopScreen() throws {
-        let photo = CapturedPhoto(data: try samplePhoto(), rawData: nil)
+        let photo = CapturedPhoto(data: try samplePhoto())
         UserDefaults.standard.set(Look.kiln.rawValue, forKey: "develop.look")
         UserDefaults.standard.set(0.35, forKey: "develop.grain")
         UserDefaults.standard.set(PhotoFrame.mat.rawValue, forKey: "develop.frame")
@@ -83,21 +121,20 @@ final class ScreenshotTests: XCTestCase {
 
     @MainActor
     func testKeyScreen() throws {
-        try capture("key") {
-            SettingsView()
+        try capture("settings") {
+            SettingsView(supportsRAW: true)
         }
     }
 
     @MainActor
     func testGrainAtFullSize() throws {
-        let photo = try samplePhoto()
-        let developer = try PhotoDeveloper(photo: CapturedPhoto(data: photo, rawData: nil), ratio: .threeFour)
+        let developer = try PhotoDeveloper(data: samplePhoto(), rawData: nil, ratio: .threeFour)
         var settings = DevelopSettings()
         settings.grain = 0.5
         settings.look = .cinder
         let image = try XCTUnwrap(developer.renderPreview(settings))
         try capture("grain") {
-            Image(uiImage: image).resizable().scaledToFit().background(Theme.ink)
+            Image(uiImage: image).resizable().scaledToFit().background(Color.black)
         }
     }
 }

@@ -21,7 +21,7 @@ final class PhotoDeveloperTests: XCTestCase {
     }
 
     private func developer(ratio: CaptureRatio = .threeFour) throws -> PhotoDeveloper {
-        try PhotoDeveloper(photo: CapturedPhoto(data: sidewaysPhoto(), rawData: nil), ratio: ratio)
+        try PhotoDeveloper(data: sidewaysPhoto(), rawData: nil, ratio: ratio)
     }
 
     private func averageColor(_ image: UIImage) throws -> [UInt8] {
@@ -56,7 +56,7 @@ final class PhotoDeveloperTests: XCTestCase {
             settings.look = look
             let toned = try averageColor(XCTUnwrap(ready.renderPreview(settings)))
             XCTAssertNotEqual(toned, natural, look.rawValue)
-            XCTAssertNotNil(ready.renderThumbnail(look: look), look.rawValue)
+            XCTAssertNotNil(ready.renderThumbnails()[look], look.rawValue)
         }
     }
 
@@ -92,6 +92,6 @@ final class PhotoDeveloperTests: XCTestCase {
     }
 
     func testUnreadablePhotoFailsCleanly() {
-        XCTAssertThrowsError(try PhotoDeveloper(photo: CapturedPhoto(data: Data([0, 1, 2]), rawData: nil), ratio: .square))
+        XCTAssertThrowsError(try PhotoDeveloper(data: Data([0, 1, 2]), rawData: nil, ratio: .square))
     }
 }

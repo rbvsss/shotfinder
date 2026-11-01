@@ -5,6 +5,7 @@ struct ScanFrame {
     let jpeg: Data
     let width: Int
     let height: Int
+    var zoomFactor: Double = 1
 }
 
 /// The shot Claude picked. Coordinates are fractions of the image, measured from the top left.

@@ -1,25 +1,27 @@
-"""Draws the app icon: a viewfinder with the found shot marked inside it."""
+"""Draws the app icon and its dark and tinted versions: a viewfinder with the found shot marked inside."""
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-OUTPUT = Path(__file__).resolve().parent.parent / "App" / "Assets.xcassets" / "AppIcon.appiconset" / "icon.png"
+OUTPUT = Path(__file__).resolve().parent.parent / "App" / "Assets.xcassets" / "AppIcon.appiconset"
 SCALE = 4
 SIZE = 1024 * SCALE
-INK = (12, 12, 11)
-PAPER = (242, 238, 229)
-SIGNAL = (255, 93, 46)
+INK = (11, 11, 12, 255)
+CLEAR = (0, 0, 0, 0)
+WHITE = (255, 255, 255, 255)
+BLUE = (0, 145, 255, 255)
+GREY = (190, 190, 190, 255)
 
 
-def main():
-    image = Image.new("RGB", (SIZE, SIZE), INK)
-    draw = ImageDraw.Draw(image)
+def draw(background, marks, shot):
+    image = Image.new("RGBA", (SIZE, SIZE), background)
+    canvas = ImageDraw.Draw(image)
 
-    width, height = 540 * SCALE, 720 * SCALE
+    width, height = 600 * SCALE, 760 * SCALE
     left, top = (SIZE - width) // 2, (SIZE - height) // 2
     right, bottom = left + width, top + height
-    arm = 150 * SCALE
-    stroke = 44 * SCALE
+    arm = 200 * SCALE
+    stroke = 66 * SCALE
 
     for x, y, dx, dy in [
         (left, top, 1, 1),
@@ -27,20 +29,29 @@ def main():
         (left, bottom, 1, -1),
         (right, bottom, -1, -1),
     ]:
-        draw.rectangle(sorted_box(x, y, x + dx * arm, y + dy * stroke), fill=PAPER)
-        draw.rectangle(sorted_box(x, y, x + dx * stroke, y + dy * arm), fill=PAPER)
+        canvas.rounded_rectangle(sorted_box(x, y, x + dx * arm, y + dy * stroke), radius=stroke // 2, fill=marks)
+        canvas.rounded_rectangle(sorted_box(x, y, x + dx * stroke, y + dy * arm), radius=stroke // 2, fill=marks)
 
-    shot_width, shot_height = 186 * SCALE, 248 * SCALE
-    shot_left = left + width - shot_width - 92 * SCALE
-    shot_top = top + 142 * SCALE
-    draw.rectangle((shot_left, shot_top, shot_left + shot_width, shot_top + shot_height), fill=SIGNAL)
-
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    image.resize((1024, 1024), Image.LANCZOS).save(OUTPUT)
+    shot_width, shot_height = 216 * SCALE, 288 * SCALE
+    shot_left = right - shot_width - 110 * SCALE
+    shot_top = top + 150 * SCALE
+    canvas.rounded_rectangle(
+        (shot_left, shot_top, shot_left + shot_width, shot_top + shot_height),
+        radius=36 * SCALE,
+        fill=shot,
+    )
+    return image.resize((1024, 1024), Image.LANCZOS)
 
 
 def sorted_box(x0, y0, x1, y1):
     return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
+
+
+def main():
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    draw(INK, WHITE, BLUE).convert("RGB").save(OUTPUT / "icon.png")
+    draw(CLEAR, WHITE, BLUE).save(OUTPUT / "icon-dark.png")
+    draw(CLEAR, WHITE, GREY).save(OUTPUT / "icon-tinted.png")
 
 
 if __name__ == "__main__":

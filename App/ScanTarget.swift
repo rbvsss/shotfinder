@@ -30,6 +30,10 @@ struct ScanTarget {
         ))
     }
 
+    var displayLabel: String {
+        label.prefix(1).uppercased() + label.dropFirst()
+    }
+
     /// Where the shot currently appears, as fractions of the viewfinder. Nil when it is behind the phone.
     func projection(rotation: simd_quatd, optics: CameraOptics, zoomFactor: Double, crop: CGSize) -> GuideProjection? {
         let current = rotation.act(ray)
@@ -61,6 +65,10 @@ struct GuideProjection {
 
     var isZoomed: Bool {
         fill > 0.85 && fill < 1.15
+    }
+
+    var staysAligned: Bool {
+        hypot(x - 0.5, y - 0.5) < 0.055 && fill > 0.8 && fill < 1.2
     }
 
     /// Whether the shot would still be near the middle after zooming in by this much.

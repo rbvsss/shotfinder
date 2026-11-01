@@ -8,7 +8,7 @@ enum Look: String, CaseIterable, Identifiable {
     case natural, kiln, fjord, cinder, salt, graphite
 
     var id: String { rawValue }
-    var title: String { rawValue.uppercased() }
+    var title: String { rawValue.capitalized }
 
     private static let cubeSize = 33
 
@@ -50,7 +50,7 @@ enum PhotoFrame: String, CaseIterable, Identifiable {
     case none, border, mat, black
 
     var id: String { rawValue }
-    var title: String { rawValue.uppercased() }
+    var title: String { rawValue.capitalized }
 
     private var color: CIColor {
         self == .black ? CIColor(red: 0.04, green: 0.04, blue: 0.04) : CIColor(red: 0.96, green: 0.95, blue: 0.92)
@@ -110,32 +110,42 @@ enum DevelopError: LocalizedError {
 
 /// Turns a captured photo into the finished image: crop, look, grain, frame.
 final class PhotoDeveloper {
-    private let context: CIContext
+    /// Display P3 throughout, so the preview shows the same colour as the saved file.
+    private static let context = CIContext(
+        options: CGColorSpace(name: CGColorSpace.displayP3).map { [.outputColorSpace: $0] } ?? [:]
+    )
+
     private let source: CIImage
     private let preview: CIImage
     private let thumbnail: CIImage
     private let rawData: Data?
 
-    private static let previewLongEdge: CGFloat = 1500
+    private static let previewLongEdge = 1500
     private static let thumbnailLongEdge: CGFloat = 220
     /// Grain cells keep the same size relative to the photo, so the preview matches the saved file.
     private static let grainReferenceEdge: CGFloat = 1600
 
-    init(photo: CapturedPhoto, ratio: CaptureRatio) throws {
-        guard let decoded = CIImage(data: photo.data, options: [.applyOrientationProperty: true]) else {
+    init(data: Data, rawData: Data?, ratio: CaptureRatio) throws {
+        // The full photo stays undecoded until saving. The preview comes from one fast downsample.
+        guard let decoded = CIImage(data: data, options: [.applyOrientationProperty: true]),
+              let small = Self.downsampled(data, longEdge: Self.previewLongEdge) else {
             throw DevelopError.unreadable
         }
-        rawData = photo.rawData
-        // Display P3 throughout, so the preview shows the same colour as the saved file.
-        context = CIContext(options: CGColorSpace(name: CGColorSpace.displayP3).map { [.outputColorSpace: $0] } ?? [:])
-        let cropped = Self.crop(decoded, to: ratio)
-        source = cropped.settingProperties(Self.uprightProperties(decoded.properties))
+        self.rawData = rawData
+        source = Self.crop(decoded, to: ratio).settingProperties(Self.uprightProperties(decoded.properties))
 
-        guard let previewImage = Self.flattened(cropped, longEdge: Self.previewLongEdge, context: context),
-              let thumbnailImage = Self.flattened(cropped, longEdge: Self.thumbnailLongEdge, context: context) else {
+        guard let previewImage = Self.flattened(Self.crop(CIImage(cgImage: small), to: ratio)) else {
             throw DevelopError.unreadable
         }
         preview = previewImage
+
+        let thumbnailScale = min(1, Self.thumbnailLongEdge / max(previewImage.extent.width, previewImage.extent.height))
+        guard let thumbnailImage = Self.flattened(previewImage.applyingFilter("CILanczosScaleTransform", parameters: [
+            kCIInputScaleKey: thumbnailScale,
+            kCIInputAspectRatioKey: 1
+        ])) else {
+            throw DevelopError.unreadable
+        }
         thumbnail = thumbnailImage
     }
 
@@ -143,12 +153,16 @@ final class PhotoDeveloper {
         image(from: Self.develop(preview, settings))
     }
 
-    func renderThumbnail(look: Look) -> UIImage? {
-        image(from: look.apply(to: thumbnail))
+    func renderThumbnails() -> [Look: UIImage] {
+        var result: [Look: UIImage] = [:]
+        for look in Look.allCases {
+            result[look] = image(from: look.apply(to: thumbnail))
+        }
+        return result
     }
 
     private func image(from output: CIImage) -> UIImage? {
-        guard let rendered = context.createCGImage(output, from: output.extent) else { return nil }
+        guard let rendered = Self.context.createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: rendered)
     }
 
@@ -160,7 +174,7 @@ final class PhotoDeveloper {
         }
         let developed = Self.develop(source, settings).settingProperties(source.properties)
         let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.95]
-        guard let jpeg = context.jpegRepresentation(of: developed, colorSpace: colorSpace, options: options) else {
+        guard let jpeg = Self.context.jpegRepresentation(of: developed, colorSpace: colorSpace, options: options) else {
             throw DevelopError.exportFailed
         }
 
@@ -248,14 +262,22 @@ final class PhotoDeveloper {
             .transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
     }
 
-    private static func flattened(_ image: CIImage, longEdge: CGFloat, context: CIContext) -> CIImage? {
-        let scale = min(1, longEdge / max(image.extent.width, image.extent.height))
-        let scaled = image.applyingFilter("CILanczosScaleTransform", parameters: [
-            kCIInputScaleKey: scale,
-            kCIInputAspectRatioKey: 1
-        ])
-        let bounds = scaled.extent.integral
-        guard let rendered = context.createCGImage(scaled, from: bounds) else { return nil }
+    /// Decodes a small upright copy of the photo without touching its full resolution.
+    private static func downsampled(_ data: Data, longEdge: Int) -> CGImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
+        let options = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: longEdge,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options)
+    }
+
+    /// Bakes the work done so far into pixels, so each later render starts from here.
+    private static func flattened(_ image: CIImage) -> CIImage? {
+        guard let rendered = context.createCGImage(image, from: image.extent.integral) else { return nil }
         return CIImage(cgImage: rendered)
     }
 

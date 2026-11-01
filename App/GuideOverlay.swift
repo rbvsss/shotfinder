@@ -1,15 +1,44 @@
 import SwiftUI
 
-/// The level line, crosshair and target box drawn over the viewfinder.
+/// The only view that updates every frame while the phone moves.
+struct LiveGuide: View {
+    let motion: MotionTracker
+    let isPaused: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: isPaused)) { _ in
+            let snapshot = motion.snapshot()
+            GuideOverlay(roll: snapshot.roll, projection: snapshot.projection, isAligned: motion.guide.isAligned)
+        }
+    }
+}
+
+/// An arrow pointing towards a shot that isn't centred yet.
+struct LiveDirection: View {
+    let motion: MotionTracker
+    let isPaused: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: isPaused)) { _ in
+            if let projection = motion.snapshot().projection, !projection.isCentered {
+                Image(systemName: "arrow.up")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .rotationEffect(.radians(atan2(projection.x - 0.5, 0.5 - projection.y)))
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+/// The level line, crosshair and shot marks drawn over the viewfinder.
 struct GuideOverlay: View {
     let roll: Double
     let projection: GuideProjection?
     let isAligned: Bool
 
-    static let levelTolerance = 1.5 * Double.pi / 180
-
-    private var isLevel: Bool {
-        abs(roll) < Self.levelTolerance
+    private var markColor: Color {
+        isAligned ? .accentColor : .white
     }
 
     var body: some View {
@@ -26,48 +55,67 @@ struct GuideOverlay: View {
                             path.move(to: center)
                             path.addLine(to: target)
                         }
-                        .stroke(Theme.signal, style: StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+                        .stroke(Color.white.opacity(0.7), style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 5]))
                     }
 
-                    // Once the frame matches the shot, the box has done its job.
+                    // Once the frame matches the shot, the marks have done their job.
                     if !(projection.isCentered && projection.isZoomed) {
-                        Rectangle()
-                            .stroke(Theme.signal, lineWidth: 2)
+                        CornerMarks(arm: 18)
+                            .stroke(markColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                             .frame(width: projection.width * size.width, height: projection.height * size.height)
                             .position(target)
                     }
                 }
 
-                levelLine(width: size.width * 0.36)
+                levelLine(width: size.width * 0.3)
                     .position(center)
 
-                if projection != nil {
-                    crosshair
-                        .position(center)
-                }
+                crosshair
+                    .position(center)
             }
-            .shadow(color: Theme.ink.opacity(0.7), radius: 1)
+            .shadow(color: Theme.keyline, radius: 1)
         }
         .clipped()
         .allowsHitTesting(false)
     }
 
     private func levelLine(width: CGFloat) -> some View {
-        let color = isLevel && projection != nil ? Theme.signal : Theme.paper.opacity(0.8)
-        return HStack(spacing: 0) {
-            Rectangle().fill(color).frame(width: width * 0.18, height: 1.5)
-            Rectangle().fill(color).frame(width: width * 0.64, height: 1.5)
+        HStack(spacing: 0) {
+            Capsule().frame(width: width * 0.16, height: 1.5)
+            Capsule().frame(width: width * 0.68, height: 1.5)
                 .rotationEffect(.radians(-roll))
-            Rectangle().fill(color).frame(width: width * 0.18, height: 1.5)
+            Capsule().frame(width: width * 0.16, height: 1.5)
         }
+        .foregroundStyle(markColor)
     }
 
     private var crosshair: some View {
         ZStack {
-            Rectangle().frame(width: 14, height: 1.5)
-            Rectangle().frame(width: 1.5, height: 14)
+            Capsule().frame(width: 12, height: 1.5)
+            Capsule().frame(width: 1.5, height: 12)
         }
-        .foregroundStyle(isAligned ? Theme.signal : Theme.paper)
+        .foregroundStyle(markColor)
+    }
+}
+
+/// Four corner marks that frame a shot without covering it.
+struct CornerMarks: Shape {
+    let arm: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let reach = min(arm, min(rect.width, rect.height) / 3)
+        var path = Path()
+        for (corner, dx, dy) in [
+            (CGPoint(x: rect.minX, y: rect.minY), reach, reach),
+            (CGPoint(x: rect.maxX, y: rect.minY), -reach, reach),
+            (CGPoint(x: rect.minX, y: rect.maxY), reach, -reach),
+            (CGPoint(x: rect.maxX, y: rect.maxY), -reach, -reach)
+        ] {
+            path.move(to: CGPoint(x: corner.x + dx, y: corner.y))
+            path.addLine(to: corner)
+            path.addLine(to: CGPoint(x: corner.x, y: corner.y + dy))
+        }
+        return path
     }
 }
 
@@ -88,7 +136,7 @@ struct RatioMask: View {
                 path.addRect(CGRect(x: 0, y: bandY, width: bandX, height: height - 2 * bandY))
                 path.addRect(CGRect(x: width - bandX, y: bandY, width: bandX, height: height - 2 * bandY))
             }
-            .fill(Theme.ink.opacity(0.78))
+            .fill(Theme.mask)
         }
         .allowsHitTesting(false)
     }
@@ -96,35 +144,21 @@ struct RatioMask: View {
 
 /// Corner marks that breathe while a scan is running.
 struct ScanBrackets: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dimmed = false
 
     var body: some View {
-        GeometryReader { geometry in
-            let inset: CGFloat = 16
-            let arm: CGFloat = 26
-            let rect = CGRect(origin: .zero, size: geometry.size).insetBy(dx: inset, dy: inset)
-
-            Path { path in
-                for (corner, dx, dy) in [
-                    (CGPoint(x: rect.minX, y: rect.minY), arm, arm),
-                    (CGPoint(x: rect.maxX, y: rect.minY), -arm, arm),
-                    (CGPoint(x: rect.minX, y: rect.maxY), arm, -arm),
-                    (CGPoint(x: rect.maxX, y: rect.maxY), -arm, -arm)
-                ] {
-                    path.move(to: CGPoint(x: corner.x + dx, y: corner.y))
-                    path.addLine(to: corner)
-                    path.addLine(to: CGPoint(x: corner.x, y: corner.y + dy))
+        CornerMarks(arm: 28)
+            .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .padding(18)
+            .shadow(color: Theme.keyline, radius: 1)
+            .opacity(reduceMotion ? 0.7 : (dimmed ? 0.3 : 1))
+            .allowsHitTesting(false)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    dimmed = true
                 }
             }
-            .stroke(Theme.signal, lineWidth: 2)
-            .shadow(color: Theme.ink.opacity(0.7), radius: 1)
-            .opacity(dimmed ? 0.25 : 1)
-        }
-        .allowsHitTesting(false)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                dimmed = true
-            }
-        }
     }
 }
