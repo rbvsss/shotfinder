@@ -52,8 +52,9 @@ enum ClaudeScanner {
     view and mark where it is.
 
     Return:
-    - label: what the shot is, in 2 to 4 lowercase words, such as "distant church spires".
-    - tip: one short lowercase instruction for getting the shot, under 8 words.
+    - label: what the shot is, in 2 to 4 words, such as "distant church spires".
+    - tip: one short instruction for getting the shot, under 8 words, in sentence case with no \
+    full stop.
     - center_x, center_y: the centre of the shot as fractions of the image from 0 to 1, where \
     0,0 is the top left corner.
     - size: the width of the shot as a fraction of the image width. Place the shot so that the \

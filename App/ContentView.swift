@@ -14,6 +14,11 @@ struct ContentView: View {
         var id: Double { value }
     }
 
+    private struct MessageTimer: Equatable {
+        let message: String?
+        let isHidden: Bool
+    }
+
     /// Time for the lens to settle after switching to the widest view for a scan.
     private static let lensSettleDelay: UInt64 = 300_000_000
     private static let lensMatchTolerance = 0.03
@@ -70,13 +75,22 @@ struct ContentView: View {
             }
         }
         .animation(Theme.quick, value: camera.capturedPhoto?.id)
-        .sheet(isPresented: $showingSettings) {
+        .sheet(isPresented: $showingSettings, onDismiss: { scanMessage = nil }) {
             SettingsView()
         }
-        .alert("Camera problem", isPresented: cameraErrorBinding) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(camera.errorMessage ?? "")
+        .onChange(of: camera.errorMessage) { _, message in
+            if let message {
+                scanMessage = message
+                camera.errorMessage = nil
+            }
+        }
+        .task(id: MessageTimer(message: scanMessage, isHidden: camera.capturedPhoto != nil)) {
+            // Messages fade after a moment, but wait until the camera screen is showing again.
+            guard scanMessage != nil, camera.capturedPhoto == nil else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if !Task.isCancelled {
+                scanMessage = nil
+            }
         }
         .onAppear {
             camera.start()
@@ -112,13 +126,19 @@ struct ContentView: View {
     private var permissionNotice: some View {
         VStack(spacing: 16) {
             notice("Camera access is off. Turn it on in Settings to take photos.")
-            Button("Open Settings") {
+            Button {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
+            } label: {
+                Text("OPEN SETTINGS")
+                    .font(Theme.label())
+                    .foregroundStyle(Theme.paper)
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 20)
+                    .background(Theme.raised)
             }
-            .font(.system(size: 16, weight: .medium))
-            .foregroundStyle(Theme.signal)
+            .buttonStyle(PressStyle())
         }
     }
 
@@ -128,7 +148,7 @@ struct ContentView: View {
 
             Text(hintText)
                 .font(Theme.text)
-                .foregroundStyle(hintIsActive ? Theme.signal : Theme.muted)
+                .foregroundStyle(hintColor)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .frame(minHeight: 44)
@@ -139,7 +159,7 @@ struct ContentView: View {
             Spacer(minLength: 4)
 
             toolRow
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 28)
 
             Spacer(minLength: 4)
 
@@ -167,6 +187,7 @@ struct ContentView: View {
                     Rectangle()
                         .stroke(Theme.paper, lineWidth: 1.5)
                         .frame(width: 56, height: 56)
+                        .shadow(color: Theme.ink.opacity(0.7), radius: 1)
                         .position(focusPoint)
                         .transition(.opacity)
                         .allowsHitTesting(false)
@@ -182,7 +203,7 @@ struct ContentView: View {
             }
 
             if let target = currentTarget {
-                Text(target.label)
+                Text(target.label.uppercased())
                     .font(Theme.label())
                     .foregroundStyle(Theme.paper)
                     .padding(.horizontal, 12)
@@ -217,16 +238,14 @@ struct ContentView: View {
     private var lensRow: some View {
         HStack(spacing: 6) {
             ForEach(lensChips) { chip in
-                let isSelected = abs(chip.value - camera.zoomDisplay) < Self.lensMatchTolerance
+                let isSelected = chip.id == activeLensChip?.id
                 Button {
                     camera.zoom(to: chip.value)
                 } label: {
-                    Text(lensLabel(chip.value))
+                    Text(lensLabel(isSelected ? camera.zoomDisplay : chip.value))
                         .font(Theme.label())
                         .foregroundStyle(lensColor(chip, isSelected: isSelected))
-                        .frame(minWidth: 44, minHeight: 44)
-                        .padding(.horizontal, 2)
-                        .background(isSelected ? Theme.raised : Color.clear)
+                        .frame(minWidth: 52, minHeight: 44)
                 }
                 .buttonStyle(PressStyle())
                 .accessibilityLabel(chip.isTarget ? "Zoom to the shot" : "Zoom \(lensLabel(chip.value))")
@@ -239,32 +258,31 @@ struct ContentView: View {
         return isSelected ? Theme.paper : Theme.muted
     }
 
-    /// The fixed lenses, plus the shot's exact zoom and the current zoom when they differ.
+    /// The fixed lenses, plus the shot's exact zoom during a scan.
     private var lensChips: [LensChip] {
         var chips = camera.lenses.map { LensChip(value: $0, isTarget: false) }
-        func isNew(_ value: Double) -> Bool {
-            !chips.contains { abs($0.value - value) < 0.05 }
-        }
         if let lens = currentTarget?.lens {
-            if isNew(lens) {
-                chips.append(LensChip(value: lens, isTarget: true))
-            } else if let index = chips.firstIndex(where: { abs($0.value - lens) < 0.05 }) {
+            if let index = chips.firstIndex(where: { abs($0.value - lens) < 0.05 }) {
                 chips[index] = LensChip(value: chips[index].value, isTarget: true)
+            } else {
+                chips.append(LensChip(value: lens, isTarget: true))
             }
         }
-        if isNew(camera.zoomDisplay) {
-            chips.append(LensChip(value: camera.zoomDisplay, isTarget: false))
-        }
         return chips.sorted { $0.value < $1.value }
+    }
+
+    /// The chip that shows the live zoom: the nearest one at or below it, so pinching never moves the row.
+    private var activeLensChip: LensChip? {
+        lensChips.last { $0.value <= camera.zoomDisplay + Self.lensMatchTolerance } ?? lensChips.first
     }
 
     private var toolRow: some View {
         HStack(spacing: 0) {
             if camera.hasFlash {
-                toolButton(flashTitle, active: camera.flashMode != .off, action: camera.cycleFlash)
-                    .accessibilityLabel("Flash \(flashTitle)")
+                toolButton(flashTitle, active: camera.flashMode != .off, alignment: .leading, action: camera.cycleFlash)
+                    .accessibilityLabel(flashTitle)
             }
-            toolButton(ratio.rawValue, active: false) {
+            toolButton(ratio.rawValue, active: true, alignment: camera.hasFlash ? .center : .leading) {
                 withAnimation(Theme.quick) { ratio = ratio.next }
             }
             .disabled(!isIdle)
@@ -274,17 +292,22 @@ struct ContentView: View {
                 toolButton("RAW", active: rawEnabled) { rawEnabled.toggle() }
                     .accessibilityValue(rawEnabled ? "On" : "Off")
             }
-            toolButton("KEY", active: false) { showingSettings = true }
+            toolButton("API KEY", active: false, alignment: .trailing) { showingSettings = true }
                 .accessibilityLabel("Claude API key")
         }
     }
 
-    private func toolButton(_ title: String, active: Bool, action: @escaping () -> Void) -> some View {
+    private func toolButton(
+        _ title: String,
+        active: Bool,
+        alignment: Alignment = .center,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Text(title)
                 .font(Theme.label(12))
-                .foregroundStyle(active ? Theme.signal : Theme.paper.opacity(0.75))
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .foregroundStyle(active ? Theme.paper : Theme.muted)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: alignment)
         }
     }
 
@@ -309,7 +332,7 @@ struct ContentView: View {
                             .resizable()
                             .scaledToFill()
                     } else {
-                        Color.clear
+                        Rectangle().strokeBorder(Theme.paper.opacity(0.18), lineWidth: 1)
                     }
                 }
                 .frame(width: 52, height: 52)
@@ -340,8 +363,6 @@ struct ContentView: View {
                 Group {
                     if isIdle {
                         ScanMark()
-                            .fill(Theme.signal)
-                            .frame(width: 24, height: 24)
                     } else {
                         Image(systemName: "xmark")
                             .font(.system(size: 18, weight: .medium))
@@ -385,7 +406,7 @@ struct ContentView: View {
         if let scanMessage { return scanMessage }
         switch phase {
         case .idle:
-            return "Tap ✦ to find a shot"
+            return "Tap the mark to find a shot"
         case .scanning:
             return "Finding your shot"
         case .guiding(let target):
@@ -395,17 +416,11 @@ struct ContentView: View {
         }
     }
 
-    private var hintIsActive: Bool {
-        if scanMessage != nil { return true }
-        if case .scanning = phase { return true }
-        return isAligned
-    }
-
-    private var cameraErrorBinding: Binding<Bool> {
-        Binding(
-            get: { camera.errorMessage != nil },
-            set: { if !$0 { camera.errorMessage = nil } }
-        )
+    private var hintColor: Color {
+        if isAligned { return Theme.signal }
+        if scanMessage != nil { return Theme.paper }
+        if case .scanning = phase { return Theme.paper }
+        return Theme.muted
     }
 
     private func lensLabel(_ lens: Double) -> String {

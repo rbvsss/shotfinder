@@ -12,7 +12,7 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.muted)
 
             SecureField("Paste your key", text: $apiKey)
-                .font(.system(size: 16))
+                .font(Theme.text)
                 .foregroundStyle(Theme.paper)
                 .tint(Theme.signal)
                 .textInputAutocapitalization(.never)
@@ -22,21 +22,22 @@ struct SettingsView: View {
 
             Text(message ?? "Scanning uses your key and your credits. The key stays in this phone's Keychain and only goes to Claude.")
                 .font(Theme.text)
-                .foregroundStyle(message == nil ? Theme.muted : Theme.signal)
+                .foregroundStyle(message == nil ? Theme.muted : Theme.paper)
                 .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 0)
 
             Button(action: save) {
-                Text("Save")
-                    .font(.system(size: 16, weight: .semibold))
+                Text("SAVE")
+                    .font(Theme.label())
                     .foregroundStyle(Theme.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Theme.signal)
+                    .background(Theme.paper)
             }
             .buttonStyle(PressStyle())
         }
-        .padding(20)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.ink.ignoresSafeArea())
         .presentationDetents([.medium])

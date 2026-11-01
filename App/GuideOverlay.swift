@@ -38,16 +38,19 @@ struct GuideOverlay: View {
                 levelLine(width: size.width * 0.36)
                     .position(center)
 
-                crosshair
-                    .position(center)
+                if projection != nil {
+                    crosshair
+                        .position(center)
+                }
             }
+            .shadow(color: Theme.ink.opacity(0.7), radius: 1)
         }
         .clipped()
         .allowsHitTesting(false)
     }
 
     private func levelLine(width: CGFloat) -> some View {
-        let color = isLevel ? Theme.signal : Theme.paper.opacity(0.8)
+        let color = isLevel && projection != nil ? Theme.signal : Theme.paper.opacity(0.8)
         return HStack(spacing: 0) {
             Rectangle().fill(color).frame(width: width * 0.18, height: 1.5)
             Rectangle().fill(color).frame(width: width * 0.64, height: 1.5)
@@ -111,6 +114,7 @@ struct ScanBrackets: View {
                 }
             }
             .stroke(Theme.signal, lineWidth: 2)
+            .shadow(color: Theme.ink.opacity(0.7), radius: 1)
             .opacity(dimmed ? 0.25 : 1)
         }
         .allowsHitTesting(false)

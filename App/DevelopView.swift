@@ -35,7 +35,7 @@ struct DevelopView: View {
 
             Text(message ?? " ")
                 .font(Theme.text)
-                .foregroundStyle(Theme.signal)
+                .foregroundStyle(Theme.paper)
                 .multilineTextAlignment(.center)
                 .frame(minHeight: 28)
                 .padding(.horizontal, 16)
@@ -65,6 +65,12 @@ struct DevelopView: View {
             Image(uiImage: preview)
                 .resizable()
                 .scaledToFit()
+                .overlay {
+                    // A black frame would otherwise vanish into the dark screen.
+                    if settings.frame == .black {
+                        Rectangle().strokeBorder(Theme.paper.opacity(0.2), lineWidth: 1)
+                    }
+                }
         } else if message == nil {
             ProgressView()
                 .tint(Theme.paper)
@@ -72,7 +78,7 @@ struct DevelopView: View {
     }
 
     private var panelTabs: some View {
-        HStack(spacing: 28) {
+        HStack(spacing: 0) {
             ForEach(Panel.allCases, id: \.self) { item in
                 Button {
                     withAnimation(Theme.quick) { panel = item }
@@ -81,6 +87,7 @@ struct DevelopView: View {
                         .font(Theme.label())
                         .foregroundStyle(panel == item ? Theme.paper : Theme.muted)
                         .frame(minHeight: 44)
+                        .padding(.horizontal, 14)
                 }
             }
         }
@@ -120,12 +127,12 @@ struct DevelopView: View {
                             .clipped()
                             .overlay {
                                 if settings.look == look {
-                                    Rectangle().stroke(Theme.signal, lineWidth: 2)
+                                    Rectangle().strokeBorder(Theme.signal, lineWidth: 2)
                                 }
                             }
 
                             Text(look.title)
-                                .font(Theme.label(10))
+                                .font(Theme.label(11))
                                 .foregroundStyle(settings.look == look ? Theme.paper : Theme.muted)
                         }
                     }
@@ -161,9 +168,14 @@ struct DevelopView: View {
                 } label: {
                     Text(frame.title)
                         .font(Theme.label(12))
-                        .foregroundStyle(settings.frame == frame ? Theme.ink : Theme.paper)
+                        .foregroundStyle(settings.frame == frame ? Theme.paper : Theme.muted)
                         .frame(maxWidth: .infinity, minHeight: 48)
-                        .background(settings.frame == frame ? Theme.paper : Theme.raised)
+                        .background(Theme.raised)
+                        .overlay {
+                            if settings.frame == frame {
+                                Rectangle().strokeBorder(Theme.signal, lineWidth: 2)
+                            }
+                        }
                 }
             }
         }
@@ -175,28 +187,40 @@ struct DevelopView: View {
             Button {
                 confirmingDiscard = true
             } label: {
-                Text("Discard")
-                    .font(.system(size: 16, weight: .medium))
+                Text("DISCARD")
+                    .font(Theme.label())
                     .foregroundStyle(Theme.paper)
-                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .frame(width: 110, height: 52)
                     .background(Theme.raised)
             }
             .buttonStyle(PressStyle())
 
             Button(action: save) {
-                Text(isSaving ? "Saving" : "Save")
-                    .font(.system(size: 16, weight: .semibold))
+                Text(isSaving ? "SAVING" : "SAVE")
+                    .font(Theme.label())
                     .foregroundStyle(Theme.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Theme.signal)
+                    .background(Theme.paper)
             }
             .buttonStyle(PressStyle())
             .disabled(isSaving || developer == nil)
+            .opacity(developer == nil ? 0.35 : 1)
         }
         .disabled(isSaving)
     }
 
+    /// A slim square knob, so the slider matches the app's other controls.
+    private func styleSliderKnob() {
+        let knob = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 22)).image { context in
+            UIColor(Theme.paper).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 22))
+        }
+        UISlider.appearance().setThumbImage(knob, for: .normal)
+        UISlider.appearance().setThumbImage(knob, for: .highlighted)
+    }
+
     private func prepare() async {
+        styleSliderKnob()
         settings = DevelopSettings(
             look: Look(rawValue: savedLook) ?? .natural,
             grain: min(max(savedGrain, 0), 1),
