@@ -10,7 +10,7 @@ struct DevelopView: View {
 
     let photo: CapturedPhoto
     let ratio: CaptureRatio
-    let onSaved: (UIImage?) -> Void
+    let onSaved: (_ thumbnail: UIImage?, _ rawSaved: Bool) -> Void
     let onDiscard: () -> Void
 
     @AppStorage("develop.look") private var savedLook = Look.natural.rawValue
@@ -220,7 +220,9 @@ struct DevelopView: View {
     }
 
     private func renderPreview() async {
-        guard let developer else { return }
+        // A short wait lets slider drags skip the renders that would be thrown away.
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        guard !Task.isCancelled, let developer else { return }
         let current = settings
         let rendered = await Task.detached(priority: .userInitiated) {
             developer.renderPreview(current)
@@ -245,8 +247,8 @@ struct DevelopView: View {
         let current = settings
         Task {
             do {
-                try await developer.save(current)
-                onSaved(preview)
+                let rawSaved = try await developer.save(current)
+                onSaved(preview, rawSaved)
             } catch {
                 message = error.localizedDescription
                 isSaving = false

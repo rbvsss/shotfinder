@@ -18,6 +18,7 @@ struct ContentView: View {
     private static let lensSettleDelay: UInt64 = 300_000_000
     private static let lensMatchTolerance = 0.03
 
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var camera: CameraController
     @StateObject private var motion = MotionTracker()
     @AppStorage("camera.ratio") private var ratio = CaptureRatio.threeFour
@@ -55,9 +56,12 @@ struct ContentView: View {
                 DevelopView(
                     photo: photo,
                     ratio: ratio,
-                    onSaved: { thumbnail in
+                    onSaved: { thumbnail, rawSaved in
                         lastPhoto = thumbnail
                         camera.capturedPhoto = nil
+                        if !rawSaved {
+                            scanMessage = "Photo saved, but its RAW file wasn't."
+                        }
                     },
                     onDiscard: { camera.capturedPhoto = nil }
                 )
@@ -77,6 +81,17 @@ struct ContentView: View {
         .onAppear {
             camera.start()
             motion.start()
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onChange(of: camera.capturedPhoto?.id) { _, photo in
+            camera.setRunning(photo == nil)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // Turns made while the app is away can't be measured, so the guide would be wrong.
+            if newPhase == .background {
+                stopGuiding()
+            }
+            UIApplication.shared.isIdleTimerDisabled = newPhase == .active
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: isAligned) { _, aligned in
             aligned
@@ -252,6 +267,8 @@ struct ContentView: View {
             toolButton(ratio.rawValue, active: false) {
                 withAnimation(Theme.quick) { ratio = ratio.next }
             }
+            .disabled(!isIdle)
+            .opacity(isIdle ? 1 : 0.35)
             .accessibilityLabel("Ratio \(ratio.rawValue)")
             if camera.supportsRAW {
                 toolButton("RAW", active: rawEnabled) { rawEnabled.toggle() }
@@ -423,14 +440,22 @@ struct ContentView: View {
         if isIdle {
             startScan()
         } else {
-            scanTask?.cancel()
-            scanTask = nil
-            scanMessage = nil
-            withAnimation(Theme.quick) { phase = .idle }
+            stopGuiding()
         }
     }
 
+    private func stopGuiding() {
+        scanTask?.cancel()
+        scanTask = nil
+        scanMessage = nil
+        withAnimation(Theme.quick) { phase = .idle }
+    }
+
     private func startScan() {
+        guard motion.isHeldForScan else {
+            scanMessage = "Hold the phone upright to scan."
+            return
+        }
         guard let apiKey = KeyStore.load() else {
             scanMessage = ScanError.missingKey.errorDescription
             showingSettings = true

@@ -25,9 +25,11 @@ enum ScanError: LocalizedError {
     case api(String)
     case refused
     case badResponse
+    case cameraNotReady
 
     var errorDescription: String? {
         switch self {
+        case .cameraNotReady: return "The camera isn't ready. Try again."
         case .missingKey: return "Add your Claude API key to scan."
         case .rejectedKey: return "Claude didn't accept this API key."
         case .noCredits: return "Your Claude API credits have run out."

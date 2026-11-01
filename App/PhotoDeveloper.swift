@@ -110,7 +110,7 @@ enum DevelopError: LocalizedError {
 
 /// Turns a captured photo into the finished image: crop, look, grain, frame.
 final class PhotoDeveloper {
-    private let context = CIContext()
+    private let context: CIContext
     private let source: CIImage
     private let preview: CIImage
     private let thumbnail: CIImage
@@ -126,6 +126,8 @@ final class PhotoDeveloper {
             throw DevelopError.unreadable
         }
         rawData = photo.rawData
+        // Display P3 throughout, so the preview shows the same colour as the saved file.
+        context = CIContext(options: CGColorSpace(name: CGColorSpace.displayP3).map { [.outputColorSpace: $0] } ?? [:])
         let cropped = Self.crop(decoded, to: ratio)
         source = cropped.settingProperties(Self.uprightProperties(decoded.properties))
 
@@ -150,8 +152,9 @@ final class PhotoDeveloper {
         return UIImage(cgImage: rendered)
     }
 
-    /// Writes the finished photo to the library, and the RAW file beside it if there is one.
-    func save(_ settings: DevelopSettings) async throws {
+    /// Writes the finished photo to the library, then the RAW file beside it if there is one.
+    /// Returns false when only the RAW file failed, so the finished photo is never lost to it.
+    func save(_ settings: DevelopSettings) async throws -> Bool {
         guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
             throw DevelopError.exportFailed
         }
@@ -165,16 +168,27 @@ final class PhotoDeveloper {
         guard access == .authorized || access == .limited else {
             throw DevelopError.photosDenied
         }
-        let raw = rawData
         do {
             try await PHPhotoLibrary.shared().performChanges {
                 PHAssetCreationRequest.forAsset().addResource(with: .photo, data: jpeg, options: nil)
-                if let raw {
-                    PHAssetCreationRequest.forAsset().addResource(with: .photo, data: raw, options: nil)
-                }
             }
         } catch {
             throw DevelopError.saveFailed
+        }
+
+        guard let rawData else { return true }
+        let rawFile = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).dng")
+        do {
+            try rawData.write(to: rawFile)
+            try await PHPhotoLibrary.shared().performChanges {
+                let options = PHAssetResourceCreationOptions()
+                options.shouldMoveFile = true
+                PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: rawFile, options: options)
+            }
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: rawFile)
+            return false
         }
     }
 
@@ -188,7 +202,7 @@ final class PhotoDeveloper {
         guard amount > 0, let noise = CIFilter.randomGenerator().outputImage else { return image }
         let longEdge = max(image.extent.width, image.extent.height)
         let cell = max(1, longEdge / grainReferenceEdge)
-        let strength = CGFloat(amount) * 1.6
+        let strength = CGFloat(amount) * 1.1
         let area = image.extent
             .applying(CGAffineTransform(scaleX: 1 / cell, y: 1 / cell))
             .insetBy(dx: -8, dy: -8)

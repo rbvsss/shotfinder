@@ -41,10 +41,13 @@ final class CameraController: NSObject, ObservableObject {
     private var device: AVCaptureDevice?
     private var wideFactor: Double = 1
     private var pendingFrame: CheckedContinuation<Data, Error>?
+    private var frameRequest = 0
     private var processedData: Data?
     private var rawData: Data?
+    private var rawRequested = false
 
     private static let scanLongEdge: CGFloat = 1200
+    private static let frameTimeout: TimeInterval = 3
     private static let maximumDisplayZoom: Double = 15
 
     var zoomFactor: Double {
@@ -61,7 +64,7 @@ final class CameraController: NSObject, ObservableObject {
         guard dimensions.width > 0, dimensions.height > 0 else { return nil }
         let long = max(dimensions.width, dimensions.height)
         let short = min(dimensions.width, dimensions.height)
-        let tanLong = tan(Double(format.videoFieldOfView) * .pi / 360)
+        let tanLong = tan(Double(format.geometricDistortionCorrectedVideoFieldOfView) * .pi / 360)
         return CameraOptics(tanHorizontal: tanLong * Double(short) / Double(long), tanVertical: tanLong)
     }
 
@@ -120,8 +123,6 @@ final class CameraController: NSObject, ObservableObject {
             session.addInput(input)
             session.addOutput(photoOutput)
             photoOutput.maxPhotoQualityPrioritization = .quality
-            let rawAvailable = photoOutput.isAppleProRAWSupported
-            photoOutput.isAppleProRAWEnabled = rawAvailable
 
             videoOutput.alwaysDiscardsLateVideoFrames = true
             videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
@@ -130,7 +131,16 @@ final class CameraController: NSObject, ObservableObject {
             if let connection = videoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
             }
+            photoOutput.isAppleProRAWEnabled = photoOutput.isAppleProRAWSupported
             session.commitConfiguration()
+            let rawAvailable = photoOutput.isAppleProRAWEnabled
+
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(sessionFailed),
+                name: AVCaptureSession.runtimeErrorNotification,
+                object: session
+            )
 
             device = camera
             let switchOvers = camera.virtualDeviceSwitchOverVideoZoomFactors.map(\.doubleValue)
@@ -148,6 +158,26 @@ final class CameraController: NSObject, ObservableObject {
                 self.hasFlash = flash
                 self.supportsRAW = rawAvailable
                 self.status = .ready
+            }
+        }
+    }
+
+    @objc private func sessionFailed() {
+        sessionQueue.async { [self] in
+            if !session.isRunning {
+                session.startRunning()
+            }
+        }
+    }
+
+    /// Pauses the camera while a photo is being developed, to save heat and battery.
+    func setRunning(_ running: Bool) {
+        sessionQueue.async { [self] in
+            guard device != nil, session.isRunning != running else { return }
+            if running {
+                session.startRunning()
+            } else {
+                session.stopRunning()
             }
         }
     }
@@ -235,12 +265,30 @@ final class CameraController: NSObject, ObservableObject {
 
     /// Returns the next video frame as a portrait JPEG small enough to send for scanning.
     func captureScanFrame() async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                videoQueue.async {
+                    self.failPendingFrame(with: CancellationError())
+                    self.frameRequest += 1
+                    self.pendingFrame = continuation
+                    let request = self.frameRequest
+                    self.videoQueue.asyncAfter(deadline: .now() + Self.frameTimeout) {
+                        if request == self.frameRequest {
+                            self.failPendingFrame(with: ScanError.cameraNotReady)
+                        }
+                    }
+                }
+            }
+        } onCancel: {
             videoQueue.async {
-                self.pendingFrame?.resume(throwing: CancellationError())
-                self.pendingFrame = continuation
+                self.failPendingFrame(with: CancellationError())
             }
         }
+    }
+
+    private func failPendingFrame(with error: Error) {
+        pendingFrame?.resume(throwing: error)
+        pendingFrame = nil
     }
 
     func capturePhoto(rotationAngle: CGFloat, raw: Bool) {
@@ -248,15 +296,18 @@ final class CameraController: NSObject, ObservableObject {
         isCapturing = true
         let flash = flashMode
         sessionQueue.async { [self] in
-            guard session.isRunning else {
-                finishCapture(error: "The camera isn't running. Try again.")
+            guard session.isRunning,
+                  let connection = photoOutput.connection(with: .video),
+                  connection.isActive, connection.isEnabled else {
+                finishCapture(error: "The camera isn't ready. Try again.")
                 return
             }
-            if let connection = photoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(rotationAngle) {
+            if connection.isVideoRotationAngleSupported(rotationAngle) {
                 connection.videoRotationAngle = rotationAngle
             }
             processedData = nil
             rawData = nil
+            rawRequested = raw
             let settings = makeSettings(raw: raw)
             if photoOutput.supportedFlashModes.contains(flash) {
                 settings.flashMode = flash
@@ -269,22 +320,29 @@ final class CameraController: NSObject, ObservableObject {
         let processed: [String: Any]? = photoOutput.availablePhotoCodecTypes.contains(.hevc)
             ? [AVVideoCodecKey: AVVideoCodecType.hevc]
             : nil
+        let settings: AVCapturePhotoSettings
         if raw, let format = photoOutput.availableRawPhotoPixelFormatTypes.first(where: AVCapturePhotoOutput.isAppleProRAWPixelFormat) {
-            return AVCapturePhotoSettings(rawPixelFormatType: format, processedFormat: processed)
+            settings = AVCapturePhotoSettings(rawPixelFormatType: format, processedFormat: processed)
+        } else {
+            settings = processed.map { AVCapturePhotoSettings(format: $0) } ?? AVCapturePhotoSettings()
         }
-        let settings = processed.map { AVCapturePhotoSettings(format: $0) } ?? AVCapturePhotoSettings()
         settings.photoQualityPrioritization = .quality
         return settings
     }
 
     private func finishCapture(error: String?) {
         let photo = processedData.map { CapturedPhoto(data: $0, rawData: rawData) }
+        let rawMissing = rawRequested && rawData == nil
         processedData = nil
         rawData = nil
+        rawRequested = false
         DispatchQueue.main.async {
             self.isCapturing = false
             if let photo {
                 self.capturedPhoto = photo
+                if rawMissing {
+                    self.errorMessage = "This shot has no RAW file, but the photo is fine."
+                }
             } else {
                 self.errorMessage = error ?? "Couldn't take the photo."
             }

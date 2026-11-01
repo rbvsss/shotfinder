@@ -76,8 +76,8 @@ final class ScreenshotTests: XCTestCase {
                 UserDefaults.standard.removeObject(forKey: key)
             }
         }
-        try capture("develop", delay: 4) {
-            DevelopView(photo: photo, ratio: .fourFive, onSaved: { _ in }, onDiscard: {})
+        try capture("develop", delay: 10) {
+            DevelopView(photo: photo, ratio: .fourFive, onSaved: { _, _ in }, onDiscard: {})
         }
     }
 

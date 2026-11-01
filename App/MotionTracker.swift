@@ -10,6 +10,7 @@ final class MotionTracker: ObservableObject {
     private let manager = CMMotionManager()
     private var lastTimestamp: TimeInterval?
     private var isFlat = false
+    private var lastUprightAngle: CGFloat = 90
 
     /// Longest gap between readings to integrate, so a pause in updates can't cause a jump.
     private static let maxStep: TimeInterval = 0.2
@@ -35,16 +36,22 @@ final class MotionTracker: ObservableObject {
 
     /// Rotation for a photo so it comes out upright however the phone is held.
     var captureRotationAngle: CGFloat {
-        guard !isFlat else { return 90 }
-        let quarterTurns = (roll / (.pi / 2)).rounded()
-        let angle = (90 + quarterTurns * 90 + 360).truncatingRemainder(dividingBy: 360)
-        return CGFloat(angle)
+        lastUprightAngle
+    }
+
+    /// Scans are judged as portrait images, so a sideways phone would mislead them.
+    var isHeldForScan: Bool {
+        isFlat || abs(roll) < .pi / 4
     }
 
     private func update(with motion: CMDeviceMotion) {
         let gravity = motion.gravity
         roll = atan2(gravity.x, -gravity.y)
         isFlat = abs(gravity.z) > 0.8
+        if !isFlat {
+            let quarterTurns = (roll / (.pi / 2)).rounded()
+            lastUprightAngle = CGFloat((90 + quarterTurns * 90 + 360).truncatingRemainder(dividingBy: 360))
+        }
 
         defer { lastTimestamp = motion.timestamp }
         guard let last = lastTimestamp else { return }
