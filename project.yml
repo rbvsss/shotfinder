@@ -9,7 +9,9 @@ targets:
     platform: iOS
     sources:
       - App
-    scheme: {}
+    scheme:
+      testTargets:
+        - ShotFinderTests
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vault.shotfinder
@@ -17,13 +19,29 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Info.plist
       properties:
         CFBundleDisplayName: ShotFinder
         UILaunchScreen: {}
         UIRequiresFullScreen: true
+        UIUserInterfaceStyle: Dark
+        UIStatusBarStyle: UIStatusBarStyleLightContent
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSCameraUsageDescription: ShotFinder uses the camera to take photos and scan the scene.
         NSPhotoLibraryAddUsageDescription: ShotFinder saves the photos you take to your library.
+  ShotFinderTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: ShotFinder
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        PRODUCT_BUNDLE_IDENTIFIER: com.vault.shotfinder.tests
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"

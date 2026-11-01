@@ -3,34 +3,45 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var apiKey = KeyStore.load() ?? ""
-    @State private var saveFailed = false
+    @State private var message: String?
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    SecureField("Claude API key", text: $apiKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } footer: {
-                    Text("Create a key in the Claude Console. It stays in this phone's Keychain and is only sent to Claude when you scan.")
-                }
-                if saveFailed {
-                    Text("Couldn't save the key. Try again.")
-                        .foregroundStyle(.red)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            Text("CLAUDE API KEY")
+                .font(Theme.label())
+                .foregroundStyle(Theme.muted)
+
+            SecureField("Paste your key", text: $apiKey)
+                .font(.system(size: 16))
+                .foregroundStyle(Theme.paper)
+                .tint(Theme.signal)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(14)
+                .background(Theme.raised)
+
+            Text(message ?? "Scanning uses your key and your credits. The key stays in this phone's Keychain and only goes to Claude.")
+                .font(Theme.text)
+                .foregroundStyle(message == nil ? Theme.muted : Theme.signal)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            Button(action: save) {
+                Text("Save")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Theme.signal)
             }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
-                }
-            }
+            .buttonStyle(PressStyle())
         }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.ink.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
     }
 
     private func save() {
@@ -41,7 +52,7 @@ struct SettingsView: View {
         } else if KeyStore.save(trimmed) {
             dismiss()
         } else {
-            saveFailed = true
+            message = "The key couldn't be saved. Try again."
         }
     }
 }
