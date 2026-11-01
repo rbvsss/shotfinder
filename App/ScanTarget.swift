@@ -62,4 +62,9 @@ struct GuideProjection {
     var isZoomed: Bool {
         fill > 0.85 && fill < 1.15
     }
+
+    /// Whether the shot would still be near the middle after zooming in by this much.
+    func staysCentered(afterZooming growth: Double) -> Bool {
+        growth > 1 && hypot(x - 0.5, y - 0.5) * growth < 0.2
+    }
 }

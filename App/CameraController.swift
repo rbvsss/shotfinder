@@ -206,7 +206,7 @@ final class CameraController: NSObject, ObservableObject {
     }
 
     /// Moves to a zoom given as shown on the lens buttons, where 1 is the main camera.
-    func zoom(to display: Double, animated: Bool = true) {
+    func zoom(to display: Double, animated: Bool = true, rate: Float = 8) {
         guard let camera = device else { return }
         let lowest = Double(camera.minAvailableVideoZoomFactor) / wideFactor
         let highest = min(Double(camera.maxAvailableVideoZoomFactor) / wideFactor, Self.maximumDisplayZoom)
@@ -214,16 +214,16 @@ final class CameraController: NSObject, ObservableObject {
         zoomDisplay = clamped
         let factor = clamped * wideFactor
         sessionQueue.async { [self] in
-            setZoomFactor(factor, animated: animated)
+            setZoomFactor(factor, animated: animated, rate: rate)
         }
     }
 
-    private func setZoomFactor(_ factor: Double, animated: Bool) {
+    private func setZoomFactor(_ factor: Double, animated: Bool, rate: Float = 8) {
         guard let camera = device else { return }
         do {
             try camera.lockForConfiguration()
             if animated {
-                camera.ramp(toVideoZoomFactor: CGFloat(factor), withRate: 8)
+                camera.ramp(toVideoZoomFactor: CGFloat(factor), withRate: rate)
             } else {
                 camera.videoZoomFactor = CGFloat(factor)
             }

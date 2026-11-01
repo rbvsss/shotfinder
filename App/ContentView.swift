@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var pinchStartZoom: Double?
     @State private var focusPoint: CGPoint?
     @State private var shutterBlink = false
+    @State private var zoomIsManual = false
 
     init(camera: @autoclosure @escaping () -> CameraController = CameraController()) {
         _camera = StateObject(wrappedValue: camera())
@@ -96,6 +97,12 @@ struct ContentView: View {
             camera.start()
             motion.start()
             UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onChange(of: shouldAutoZoom) { _, should in
+            if should, let lens = currentTarget?.lens {
+                zoomIsManual = true
+                camera.zoom(to: lens, rate: 2.5)
+            }
         }
         .onChange(of: camera.capturedPhoto?.id) { _, photo in
             camera.setRunning(photo == nil)
@@ -228,6 +235,7 @@ struct ContentView: View {
             .onChanged { value in
                 let start = pinchStartZoom ?? camera.zoomDisplay
                 pinchStartZoom = start
+                zoomIsManual = true
                 camera.zoom(to: start * value.magnification, animated: false)
             }
             .onEnded { _ in
@@ -240,6 +248,7 @@ struct ContentView: View {
             ForEach(lensChips) { chip in
                 let isSelected = chip.id == activeLensChip?.id
                 Button {
+                    zoomIsManual = true
                     camera.zoom(to: chip.value)
                 } label: {
                     Text(lensLabel(isSelected ? camera.zoomDisplay : chip.value))
@@ -364,7 +373,7 @@ struct ContentView: View {
                     if isIdle {
                         ScanMark()
                     } else {
-                        Image(systemName: "xmark")
+                        Image(systemName: isAligned ? "arrow.clockwise" : "xmark")
                             .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(Theme.paper)
                     }
@@ -373,7 +382,7 @@ struct ContentView: View {
                 .background(Theme.raised)
             }
             .buttonStyle(PressStyle())
-            .accessibilityLabel(isIdle ? "Scan for a shot" : "Stop guiding")
+            .accessibilityLabel(isIdle ? "Scan for a shot" : (isAligned ? "Scan again" : "Stop guiding"))
         }
     }
 
@@ -395,6 +404,12 @@ struct ContentView: View {
             zoomFactor: camera.zoomFactor,
             crop: ratio.cropInViewfinder
         )
+    }
+
+    /// Zooms in for the user once, as soon as the shot would stay in view at its full zoom.
+    private var shouldAutoZoom: Bool {
+        guard !zoomIsManual, let target = currentTarget, let projection = currentProjection else { return false }
+        return projection.staysCentered(afterZooming: target.lens / camera.zoomDisplay)
     }
 
     private var isAligned: Bool {
@@ -454,6 +469,9 @@ struct ContentView: View {
     private func scanButtonTapped() {
         if isIdle {
             startScan()
+        } else if isAligned {
+            stopGuiding()
+            startScan()
         } else {
             stopGuiding()
         }
@@ -478,6 +496,7 @@ struct ContentView: View {
         }
 
         scanMessage = nil
+        zoomIsManual = false
         withAnimation(Theme.quick) { phase = .scanning }
         let scanLens = camera.widestLens
         let scanRatio = ratio

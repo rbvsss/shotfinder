@@ -29,10 +29,13 @@ struct GuideOverlay: View {
                         .stroke(Theme.signal, style: StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
                     }
 
-                    Rectangle()
-                        .stroke(Theme.signal, lineWidth: isAligned ? 3 : 2)
-                        .frame(width: projection.width * size.width, height: projection.height * size.height)
-                        .position(target)
+                    // Once the frame matches the shot, the box has done its job.
+                    if !(projection.isCentered && projection.isZoomed) {
+                        Rectangle()
+                            .stroke(Theme.signal, lineWidth: 2)
+                            .frame(width: projection.width * size.width, height: projection.height * size.height)
+                            .position(target)
+                    }
                 }
 
                 levelLine(width: size.width * 0.36)

@@ -43,6 +43,14 @@ final class GeometryTests: XCTestCase {
         XCTAssertEqual(projection.y, 0.5, accuracy: 0.0001)
     }
 
+    func testAutoZoomWaitsUntilTheShotWouldStayInView() {
+        let nearMiddle = GuideProjection(x: 0.51, y: 0.51, width: 0.2, height: 0.2, fill: 0.2)
+        let offToTheSide = GuideProjection(x: 0.7, y: 0.5, width: 0.2, height: 0.2, fill: 0.2)
+        XCTAssertTrue(nearMiddle.staysCentered(afterZooming: 4))
+        XCTAssertFalse(offToTheSide.staysCentered(afterZooming: 4))
+        XCTAssertFalse(nearMiddle.staysCentered(afterZooming: 1))
+    }
+
     func testShotBehindThePhoneHasNoPosition() {
         let halfTurn = simd_quatd(angle: .pi, axis: SIMD3(0, 1, 0))
         XCTAssertNil(target(x: 0.5, y: 0.5).projection(rotation: halfTurn, optics: optics, zoomFactor: 1, crop: CGSize(width: 1, height: 1)))
