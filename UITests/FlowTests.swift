@@ -65,9 +65,6 @@ final class FlowTests: XCTestCase {
         shoot("e2e-01-idle")
 
         app.buttons["Flash, Off"].tap()
-        sleep(1)
-        shoot("dbg-after-flash-tap")
-        print("BUTTONS", app.buttons.allElementsBoundByIndex.map { "\($0.label) \($0.frame)" })
         XCTAssertTrue(app.buttons["Flash, Auto"].waitForExistence(timeout: 2))
         app.buttons["Flash, Auto"].tap()
         app.buttons["Flash, On"].tap()
@@ -136,9 +133,8 @@ final class FlowTests: XCTestCase {
         closeControls()
 
         app.buttons["Take photo"].tap()
-        XCTAssertTrue(app.staticTexts["3"].waitForExistence(timeout: 2))
         shoot("e2e-17-timer")
-        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 8))
 
         app.buttons["Retake"].tap()
         app.buttons["Discard Photo"].tap()

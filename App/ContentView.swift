@@ -59,6 +59,7 @@ struct ContentView: View {
             switch camera.status {
             case .starting, .ready:
                 cameraScreen
+                topButtons
             case .denied:
                 permissionNotice
             case .unavailable:
@@ -200,7 +201,6 @@ struct ContentView: View {
     private var cameraScreen: some View {
         VStack(spacing: 0) {
             viewfinder
-                .overlay(alignment: .top) { topButtons }
 
             HintView(
                 motion: motion,
@@ -329,7 +329,9 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16)
         // Sits in the black band above the viewfinder, level with the Dynamic Island.
-        .offset(y: -53)
+        .padding(.top, 9)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .ignoresSafeArea(edges: .top)
     }
 
     private func topButton(symbol: String, isOn: Bool, label: String, action: @escaping () -> Void) -> some View {
