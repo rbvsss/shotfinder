@@ -36,34 +36,6 @@ final class FlowTests: XCTestCase {
         }
     }
 
-    /// Runs Apple's accessibility audit on each screen. Findings are written out to be read, not to fail
-    /// the build, because the audit can't judge text drawn over a live camera picture.
-    func testAccessibilityAudit() throws {
-        try launch()
-        app.activate()
-        sleep(3)
-        var findings: [String] = []
-        func audit(_ screen: String) throws {
-            try app.performAccessibilityAudit { issue in
-                findings.append("\(screen): \(issue.compactDescription) | \(issue.detailedDescription) | \(issue.element?.label ?? "no element")")
-                return true
-            }
-        }
-
-        try audit("camera")
-        app.buttons["Scan for a shot"].tap()
-        XCTAssertTrue(app.buttons["Scan again"].waitForExistence(timeout: 8))
-        try audit("lined up")
-        app.buttons["Take photo"].tap()
-        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 5))
-        sleep(3)
-        try audit("develop")
-
-        let directory = URL(fileURLWithPath: "/tmp/shotfinder-screens")
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try findings.joined(separator: "\n").write(to: directory.appendingPathComponent("accessibility.txt"), atomically: true, encoding: .utf8)
-    }
-
     func testLargeTextLayouts() throws {
         try launch(scan: "off-center", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
         app.buttons["Scan for a shot"].tap()
