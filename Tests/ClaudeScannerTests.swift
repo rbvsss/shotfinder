@@ -77,8 +77,8 @@ final class ClaudeScannerTests: XCTestCase {
     }
 
     func testSubjectSetsTheCentreAndTheLensThatHoldsIt() async throws {
-        // A subject about a sixth of the view needs 2.25x, so it gets the 2x lens.
-        StubProtocol.body = answer(x1: 280, y1: 600, x2: 440, y2: 720)
+        // A subject a fifth of the view wide needs 2x to fill four fifths of the frame.
+        StubProtocol.body = answer(x1: 270, y1: 600, x2: 450, y2: 720)
 
         let result = try await scan()
 
@@ -103,9 +103,9 @@ final class ClaudeScannerTests: XCTestCase {
 
         let result = try await scan()
 
-        XCTAssertEqual(result.size, 0.5 / 3, accuracy: 0.0001)
-        XCTAssertEqual(result.centerX, 0.5 / 3 / 2, accuracy: 0.0001)
-        XCTAssertEqual(result.centerY, 1 - 0.0625, accuracy: 0.0001)
+        XCTAssertEqual(result.size, 0.5 / 3.6, accuracy: 0.0001)
+        XCTAssertEqual(result.centerX, 0.5 / 3.6 / 2, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 1 - 0.5 / 3.6 * 0.75 / 2, accuracy: 0.0001)
     }
 
     func testEmptySubjectIsRejected() async {

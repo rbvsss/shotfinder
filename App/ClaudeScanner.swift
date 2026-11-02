@@ -48,33 +48,40 @@ enum ClaudeScanner {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private static let systemPrompt = """
-    You are a sharp-eyed photographer looking at the ultra-wide view from a phone. Find the one subject \
-    worth a photograph. The app will zoom in and frame it for the photographer.
+    You are a professional photographer scouting a scene through the ultra-wide view of a phone. Pick \
+    the one subject a pro would walk over to and shoot. The app zooms in and frames it for the \
+    photographer.
 
-    Choose the subject:
-    - One clear thing or one person, not a row, a group or a whole room. Pick what the eye goes to \
-    first: the best-lit, most colourful or most characterful object, or a person doing something.
-    - People come first. If someone other than the photographer is in view, they are almost always the \
-    subject: their face, their hands, or what they are doing.
-    - Choose the obvious subject, not a clever one, so the same scene gets the same answer.
-    - It must be clearly visible and big enough to be sharp, not lost in shadow or tiny in the distance.
+    How a professional picks:
+    - Pull: the thing the eye goes to first. Strong colour against a quiet background, a bright or \
+    well-lit shape, bold graphics or lettering, a rich texture, or a person doing something.
+    - People first: anyone other than the photographer, with their face, hands or what they are doing, \
+    is almost always the shot, even when they are only partly in view at the edge.
+    - Simplicity: one thing that reads clearly on its own, ideally with a clean background. Not a row, a \
+    group or a whole room.
+    - Clarity: big enough to stay sharp when zoomed and well lit.
+    - Consistency: the obvious best subject, not a clever one, so the same scene always gets the same \
+    answer.
 
-    Never choose the photographer. Hands, arms, knees or feet that reach in from the bottom or sides, \
-    close to the lens, are theirs, even on a mouse or keyboard. Never choose a plain ceiling, wall or \
-    floor, or fittings nobody would photograph, such as projectors, ceiling lights, vents, air \
-    conditioners, sockets, plugs, cables, switches, radiators or bins. A bold sign, logo, poster or \
-    screen is fine when it is the most eye-catching thing in view.
+    Never pick:
+    - The photographer: hands, arms, knees or feet reaching in close to the lens from the bottom or \
+    sides, even on a mouse or keyboard.
+    - Empty surfaces: a plain ceiling, wall or floor.
+    - Fittings nobody photographs: projectors, ceiling lights, vents, air conditioners, sockets, plugs, \
+    cables, switches, radiators or bins.
 
     Return:
-    - label: the subject in 2 to 4 specific lowercase words, such as "potted fern" or "student at computer".
-    - tip: one short sentence under 10 words, ending in a full stop, on how to shoot it with only the \
-    phone. Examples: "Isolate the lamp, keep the shade glowing." "Keep the mug sharp against the window."
+    - label: the subject in 2 to 4 specific lowercase words, such as "red neon sign", "woman reading" \
+    or "potted fern".
+    - tip: one short sentence under 10 words, ending in a full stop, saying how to shoot it with only \
+    the phone, the way a photographer would. Examples: "Isolate the lamp, keep the shade glowing." "Keep \
+    the mug sharp against the window."
     - x1, y1, x2, y2: the subject's tight bounding box in pixels of this image, where 0,0 is the top \
     left corner. Include all of the subject and nothing else.
     """
 
-    /// The zooms a shot can use, so the box always matches a view the phone can give.
-    private static let lenses = [1, 1.5, 2, 2.5, 3, 4]
+    /// The longest zoom a shot can ask for, where the telephoto still gives a clean picture.
+    private static let longestZoom = 4.0
     /// How much of the frame's width or height the subject fills, leaving room around it.
     private static let subjectFill = 0.8
 
@@ -169,7 +176,7 @@ enum ClaudeScanner {
         let x2: Double
         let y2: Double
 
-        /// Frames the subject at the closest lens that still holds it with room around it, kept inside the image.
+        /// Frames the subject at the zoom that holds it with room around it, kept inside the image.
         func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
             let width = Double(frame.width)
             let height = Double(frame.height)
@@ -181,8 +188,9 @@ enum ClaudeScanner {
 
             // The share of the widest frame the shot needs, and the zoom that gives exactly that.
             let needed = max((right - left) / width / Double(crop.width), (bottom - top) / height / Double(crop.height)) / ClaudeScanner.subjectFill
-            let exact = scanLens / needed
-            let zoom = ClaudeScanner.lenses.last { $0 <= exact + 0.01 } ?? max(exact, scanLens)
+            // Rounded to a tenth, as the zoom row shows it.
+            let exact = (scanLens / needed * 10).rounded() / 10
+            let zoom = min(max(exact, scanLens), ClaudeScanner.longestZoom)
             let scale = min(scanLens / zoom, 1)
             let halfWidth = scale * Double(crop.width) / 2
             let halfHeight = scale * Double(crop.height) / 2
