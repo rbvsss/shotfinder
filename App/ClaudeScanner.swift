@@ -60,10 +60,10 @@ enum ClaudeScanner {
     - It must be clearly visible and big enough to be sharp, not lost in shadow or tiny in the distance.
 
     Never choose the photographer. Hands, arms, knees or feet that reach in from the bottom or sides, \
-    close to the lens, are theirs, even on a mouse or keyboard. Never choose a poster, sign or picture \
-    on a wall, a plain ceiling, wall or floor, or fittings nobody would photograph, such as projectors, \
-    ceiling lights, vents, air conditioners, sockets, plugs, cables, switches, radiators or bins. Look \
-    for the subject at eye level or below, where the life of the scene is.
+    close to the lens, are theirs, even on a mouse or keyboard. Never choose a plain ceiling, wall or \
+    floor, or fittings nobody would photograph, such as projectors, ceiling lights, vents, air \
+    conditioners, sockets, plugs, cables, switches, radiators or bins. A bold sign, logo, poster or \
+    screen is fine when it is the most eye-catching thing in view.
 
     Return:
     - label: the subject in 2 to 4 specific lowercase words, such as "potted fern" or "student at computer".
