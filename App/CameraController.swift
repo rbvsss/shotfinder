@@ -69,7 +69,7 @@ final class CameraController: NSObject {
     @ObservationIgnored private var captureIsUpright = true
     @ObservationIgnored private var discardsCurrentCapture = false
 
-    private static let scanLongEdge: CGFloat = 1200
+    private static let scanLongEdge: CGFloat = 1536
     private static let placeholderLongEdge: CGFloat = 1200
     private static let frameTimeout: TimeInterval = 3
     private static let maximumDisplayZoom: Double = 15

@@ -189,7 +189,7 @@ final class FlowTests: XCTestCase {
     func testGuideWhileOffCenterAndStop() throws {
         try launch(scan: "off-center")
         app.buttons["Scan for a shot"].tap()
-        expectText("Keep the horizon low")
+        expectText("Keep the horizon low.")
         sleep(1)
         shoot("e2e-30-off-center")
         XCTAssertFalse(app.buttons["Scan again"].exists)

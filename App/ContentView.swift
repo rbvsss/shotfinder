@@ -193,11 +193,8 @@ struct ContentView: View {
 
             Spacer(minLength: 0)
 
-            // Everything you touch sits here, within reach of your thumb.
-            LensRow(camera: camera, motion: motion, iconAngle: iconAngle, isShown: isIdle)
-            // Guiding leaves only the photo, the shot's name and the two buttons you need.
-            .opacity(isIdle ? 1 : 0)
-            .allowsHitTesting(isIdle)
+            // Stays while guiding, so the zoom the shot needs shows as it is reached.
+            LensRow(camera: camera, motion: motion, iconAngle: iconAngle)
             .padding(.horizontal, 32)
             .padding(.bottom, 8)
 
@@ -632,14 +629,15 @@ struct ContentView: View {
             do {
                 try await Task.sleep(nanoseconds: Self.lensSettleDelay)
                 let frame = try await camera.captureScanFrame { [motion] in motion.mark() }
-                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, apiKey: apiKey)
+                let scanLens = camera.displayZoom(forFactor: frame.zoomFactor)
+                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, scanLens: scanLens, apiKey: apiKey)
                 try Task.checkCancellation()
                 guard let optics = camera.optics else { throw ScanError.badResponse }
                 let target = ScanTarget(
                     result: result,
                     optics: optics,
                     scanZoomFactor: frame.zoomFactor,
-                    scanLens: camera.displayZoom(forFactor: frame.zoomFactor),
+                    scanLens: scanLens,
                     ratio: scanRatio
                 )
                 hasScanned = true
@@ -712,7 +710,6 @@ private struct LensRow: View {
     let camera: CameraController
     let motion: MotionTracker
     let iconAngle: Double
-    let isShown: Bool
 
     private static let matchTolerance = 0.03
 
@@ -737,7 +734,7 @@ private struct LensRow: View {
             }
         }
         .sensoryFeedback(.selection, trigger: activeLens) { old, _ in
-            isShown && old != nil
+            old != nil
         }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }

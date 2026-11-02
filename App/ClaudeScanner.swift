@@ -48,57 +48,73 @@ enum ClaudeScanner {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private static let systemPrompt = """
-    You are an experienced photographer standing beside a friend, looking at the wide view from \
-    their phone camera. They will frame and take exactly the box you choose, so choose the one \
-    picture you would stop and take yourself.
+    You are a picture editor with a sharp eye. This is the ultra-wide view from a phone. Pick the one \
+    photograph worth taking inside it. The photographer will turn to your frame, zoom in and shoot \
+    exactly what it holds.
 
-    A strong shot has one clear subject, or one clear idea such as a line, a pattern or a patch \
-    of light, set against the simplest background this view allows. Frame to that and leave out \
-    what competes with it. Give the subject room, especially on the side it faces, and let it sit \
-    off centre when that looks better.
+    How to choose:
+    - Pick one clear subject: a thing or tight group with light on it, colour, texture, or a shape that \
+    stands apart from its surroundings. Choose the obvious best subject, not a clever one, so the same \
+    scene gets the same answer.
+    - People come first. If someone other than the photographer is in view, they are almost always the \
+    picture: frame the person and what they are doing, their face, hands or gesture, not the room.
+    - Frame it tightly. Zooming compresses depth and removes clutter, so a 2x to 4x frame almost always \
+    beats a wide one. Go wider only when the breadth itself is the picture, such as a landscape, a \
+    skyline or a dramatic sky.
+    - Keep layers when they are there: something in front of or behind the subject gives depth.
+    - Centre the frame on the subject itself, then check the edges: nothing important cut, no bright \
+    scraps at the border, and no more than a third of the frame empty wall, ceiling or sky, or plain \
+    foreground such as a tablecloth, floor or road.
 
-    Check all four edges of the box before you answer. Each thing the box meets should be either \
-    well inside it or cut decisively; a sliver or a clipped end looks like a mistake. Cut people \
-    between joints, never at the neck, wrist, knee or ankle.
-
-    This applies to any scene, from a room to a landscape. When nothing stands out, commit to the \
-    best shape, light or texture there is. When the whole scene is the picture, frame it wide.
+    Never choose:
+    - A screen, poster or picture as the subject.
+    - The photographer's own legs, feet, lap or hands, which often show at the bottom of the view.
+    - Anything lost in shadow, or too small and far away to be sharp.
+    - A ceiling or wall with little else in the frame.
+    - Fittings nobody would photograph: sockets, plugs, cables, switches, radiators, bins.
 
     Return:
-    - label: what the shot shows, in 2 to 4 specific words, never a generic word like "subject".
-    - tip: one short instruction for this scene that framing alone can't do, under 8 words, in \
-    sentence case with no full stop. Examples: "Step left to clear the pole", "Wait for someone \
-    to cross", "Keep the shelf edge level".
-    - x1, y1, x2, y2: the top left and bottom right corners of the box, in pixels of this image, \
-    where 0,0 is the top left corner.
+    - label: what the shot shows, in 2 to 4 specific lowercase words.
+    - tip: one short sentence under 9 words, ending in a full stop, on what makes this frame work and \
+    how to hold it. It must be possible with only the phone: never ask to move things, change lights or \
+    wait for something unlikely. Examples: "Keep the bowls low in the frame." "Let the lamp glow \
+    against the dark wall."
+    - x, y: the centre of your frame, in pixels of this image, where 0,0 is the top left corner.
+    - lens: the lens for your frame, from the list given with the image.
     """
+
+    /// The zooms Claude can choose from. Whole frames only, so the box always matches a real view.
+    private static let lenses = ["0.7", "1", "1.5", "2", "2.5", "3", "4"]
 
     private static let schema: [String: Any] = [
         "type": "object",
         "properties": [
             "label": ["type": "string"],
             "tip": ["type": "string"],
-            "x1": ["type": "number"],
-            "y1": ["type": "number"],
-            "x2": ["type": "number"],
-            "y2": ["type": "number"]
+            "x": ["type": "number"],
+            "y": ["type": "number"],
+            "lens": ["type": "string", "enum": lenses]
         ],
-        "required": ["label", "tip", "x1", "y1", "x2", "y2"],
+        "required": ["label", "tip", "x", "y", "lens"],
         "additionalProperties": false
     ]
 
-    static func scan(frame: ScanFrame, ratio: CaptureRatio, apiKey: String) async throws -> ScanResult {
+    static func scan(frame: ScanFrame, ratio: CaptureRatio, scanLens: Double, apiKey: String) async throws -> ScanResult {
         let crop = ratio.cropInViewfinder
-        let widest = Int(Double(frame.width) * Double(crop.width))
-        let tallness = String(format: "%.3f", 1 / Double(ratio.widthOverHeight))
+        let frames = lenses.compactMap { name -> String? in
+            guard let lens = Double(name) else { return nil }
+            let scale = min(scanLens / lens, 1)
+            let width = Int(Double(frame.width) * Double(crop.width) * scale)
+            let height = Int(Double(frame.height) * Double(crop.height) * scale)
+            return "\(name): \(width)x\(height)"
+        }
         let request = """
-        This image is \(frame.width)x\(frame.height) pixels. The box must be \(ratio.rawValue) (width to \
-        height), so its height is \(tallness) times its width. It can be from \(frame.width / 10) to \
-        \(widest) pixels wide and must stay inside the image.
+        This image is \(frame.width)x\(frame.height) pixels. Your frame is \(ratio.rawValue) (width to height). \
+        Each lens gives a frame of this size in pixels of this image: \(frames.joined(separator: ", ")).
         """
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
-            "max_tokens": 16000,
+            "max_tokens": 6000,
             "fallbacks": "default",
             "output_config": [
                 "effort": "low",
@@ -121,7 +137,7 @@ enum ClaudeScanner {
             ]]
         ]
 
-        var urlRequest = URLRequest(url: endpoint, timeoutInterval: 45)
+        var urlRequest = URLRequest(url: endpoint, timeoutInterval: 60)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -155,42 +171,32 @@ enum ClaudeScanner {
         if message.stopReason == "refusal" { throw ScanError.refused }
         guard message.stopReason != "max_tokens",
               let text = message.content.first(where: { $0.type == "text" })?.text,
-              let box = try? JSONDecoder().decode(ShotBox.self, from: Data(text.utf8)),
-              let result = box.result(in: frame, crop: crop) else {
+              let shot = try? JSONDecoder().decode(Shot.self, from: Data(text.utf8)),
+              let result = shot.result(in: frame, crop: crop, scanLens: scanLens) else {
             throw ScanError.badResponse
         }
         return result
     }
 
-    private struct ShotBox: Decodable {
+    private struct Shot: Decodable {
         let label: String
         let tip: String
-        let x1: Double
-        let y1: Double
-        let x2: Double
-        let y2: Double
+        let x: Double
+        let y: Double
+        let lens: String
 
-        /// Grows to the smallest frame that holds the box, then keeps that frame inside the image.
-        func result(in frame: ScanFrame, crop: CGSize) -> ScanResult? {
-            let width = Double(frame.width)
-            let height = Double(frame.height)
-            let cropWidth = Double(crop.width)
-            let cropHeight = Double(crop.height)
-            let left = min(max(x1, 0), width)
-            let right = min(max(x2, 0), width)
-            let top = min(max(y1, 0), height)
-            let bottom = min(max(y2, 0), height)
-            guard right > left, bottom > top else { return nil }
-
-            let scale = min(max((right - left) / width / cropWidth, (bottom - top) / height / cropHeight), 1)
-            let halfWidth = scale * cropWidth / 2
-            let halfHeight = scale * cropHeight / 2
+        /// The lens sets the frame's size, and the frame is then kept inside the image.
+        func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
+            guard let zoom = Double(lens), zoom > 0 else { return nil }
+            let scale = min(scanLens / zoom, 1)
+            let halfWidth = scale * Double(crop.width) / 2
+            let halfHeight = scale * Double(crop.height) / 2
             return ScanResult(
                 label: label,
                 tip: tip,
-                centerX: min(max((left + right) / 2 / width, halfWidth), 1 - halfWidth),
-                centerY: min(max((top + bottom) / 2 / height, halfHeight), 1 - halfHeight),
-                size: scale * cropWidth
+                centerX: min(max(x / Double(frame.width), halfWidth), 1 - halfWidth),
+                centerY: min(max(y / Double(frame.height), halfHeight), 1 - halfHeight),
+                size: scale * Double(crop.width)
             )
         }
     }
