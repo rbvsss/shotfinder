@@ -48,7 +48,6 @@ struct GuideOverlay: View {
 
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Theme.accent, lineWidth: 4)
-                        .shadow(color: Theme.accent.opacity(0.8), radius: 16)
                         .frame(width: projection.width * size.width, height: projection.height * size.height)
                         .position(x: projection.x * size.width, y: projection.y * size.height)
                 }
@@ -132,14 +131,14 @@ struct GuideOverlay: View {
     private func pill(_ label: String) -> some View {
         HStack(spacing: 11) {
             Text(label)
-                .font(.subheadline.weight(.medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
 
             if isAligned {
                 pillDivider
                 Text("Ready")
-                    .font(.subheadline.weight(.medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.accent)
             } else if let projection {
                 pillDivider
@@ -150,9 +149,9 @@ struct GuideOverlay: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 16)
-        .frame(height: 34)
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+        .frame(height: 30)
         .background(Theme.pill, in: Capsule())
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }

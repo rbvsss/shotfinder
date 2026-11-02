@@ -83,7 +83,7 @@ enum ClaudeScanner {
     /// The longest zoom a shot can ask for, where the telephoto still gives a clean picture.
     private static let longestZoom = 4.0
     /// How much of the frame's width or height the subject fills, leaving room around it.
-    private static let subjectFill = 0.8
+    private static let subjectFill = 0.9
 
     private static let schema: [String: Any] = [
         "type": "object",

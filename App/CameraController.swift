@@ -61,6 +61,8 @@ final class CameraController: NSObject {
     @ObservationIgnored private var minimumFactor: Double = 1
     @ObservationIgnored private var maximumFactor: Double = 1
     @ObservationIgnored private var zoomObservation: NSKeyValueObservation?
+    @ObservationIgnored private var isoObservation: NSKeyValueObservation?
+    @ObservationIgnored private var isLowLight = false
     @ObservationIgnored private var pendingFrame: CheckedContinuation<ScanFrame, Error>?
     @ObservationIgnored private var onPendingFrame: (() -> Void)?
     @ObservationIgnored private var frameRequest = 0
@@ -76,6 +78,10 @@ final class CameraController: NSObject {
     /// Night's limits: slow enough to gather light, short enough to hold by hand.
     private static let nightExposureLimit = CMTime(value: 1, timescale: 4)
     private static let nightBoost: Float = 0.5
+    /// In low light the camera brightens a dark scene to grey. Holding it down keeps night looking like night.
+    private static let lowLightBias: Float = -0.7
+    private static let lowLightStartISO: Float = 1600
+    private static let lowLightEndISO: Float = 600
 
     #if DEBUG
     /// Stands in for a real camera so tests can drive the app on a simulator, which has none.
@@ -177,6 +183,12 @@ final class CameraController: NSObject {
             observeSession(camera)
 
             device = camera
+            // The camera's own video HDR lifts the shadows in the viewfinder, so night scenes look flat and grey.
+            if camera.activeFormat.isVideoHDRSupported, (try? camera.lockForConfiguration()) != nil {
+                camera.automaticallyAdjustsVideoHDREnabled = false
+                camera.isVideoHDREnabled = false
+                camera.unlockForConfiguration()
+            }
             optics = Self.optics(for: camera)
             let switchOvers = camera.virtualDeviceSwitchOverVideoZoomFactors.map(\.doubleValue)
             let startsUltraWide = camera.deviceType == .builtInTripleCamera || camera.deviceType == .builtInDualWideCamera
@@ -207,6 +219,11 @@ final class CameraController: NSObject {
         center.addObserver(self, selector: #selector(sessionInterrupted(_:)), name: AVCaptureSession.wasInterruptedNotification, object: session)
         center.addObserver(self, selector: #selector(interruptionEnded), name: AVCaptureSession.interruptionEndedNotification, object: session)
         center.addObserver(self, selector: #selector(subjectAreaChanged), name: AVCaptureDevice.subjectAreaDidChangeNotification, object: camera)
+
+        isoObservation = camera.observe(\.iso, options: [.new]) { [weak self] device, _ in
+            let iso = device.iso
+            DispatchQueue.main.async { self?.updateLowLight(iso: iso) }
+        }
 
         zoomObservation = camera.observe(\.videoZoomFactor, options: [.new]) { [weak self] device, _ in
             guard let self else { return }
@@ -386,8 +403,17 @@ final class CameraController: NSObject {
         applyBias()
     }
 
+    /// Low light starts high and ends lower, so the darker exposure it adds can't switch it straight back off.
+    private func updateLowLight(iso: Float) {
+        let isDark = isLowLight ? iso > Self.lowLightEndISO : iso > Self.lowLightStartISO
+        guard isDark != isLowLight else { return }
+        isLowLight = isDark
+        applyBias()
+    }
+
     private func applyBias() {
-        let total = exposureCompensation + (isNightOn ? Self.nightBoost : 0)
+        let dusk = isLowLight && !isNightOn ? Self.lowLightBias : 0
+        let total = exposureCompensation + dusk + (isNightOn ? Self.nightBoost : 0)
         sessionQueue.async { [self] in
             guard let camera = device, (try? camera.lockForConfiguration()) != nil else { return }
             let bias = min(max(total, camera.minExposureTargetBias), camera.maxExposureTargetBias)

@@ -681,18 +681,18 @@ private struct HintView: View {
         VStack(spacing: 2) {
             if let message {
                 Text(message)
-                    .font(.subheadline)
+                    .font(.footnote)
             } else if isScanning {
                 Text(scanIsSlow ? "Still looking…" : "Finding your shot…")
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(Theme.accent)
             } else if let target = motion.target {
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             } else if showsFirstHint {
                 Text("Tap \(Image(systemName: "viewfinder")) to scan for a shot")
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }

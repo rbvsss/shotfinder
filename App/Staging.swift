@@ -37,13 +37,13 @@ final class FakeClaude: URLProtocol {
         case "offline":
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
-        case "off-center": reply = (200, Self.answer(x1: 530, y1: 730, x2: 770, y2: 910))
+        case "off-center": reply = (200, Self.answer(x1: 515, y1: 730, x2: 785, y2: 910))
         case "bad-key": reply = (401, #"{"error":{"message":"invalid x-api-key"}}"#)
         case "no-credits": reply = (400, #"{"error":{"message":"Your credit balance is too low"}}"#)
         case "busy": reply = (529, #"{"error":{"message":"Overloaded"}}"#)
         case "refused": reply = (200, #"{"content":[],"stop_reason":"refusal"}"#)
         case "garbled": reply = (200, "not json")
-        default: reply = (200, Self.answer(x1: 270, y1: 465, x2: 630, y2: 735))
+        default: reply = (200, Self.answer(x1: 248, y1: 465, x2: 653, y2: 735))
         }
 
         // "slow" holds the scan long enough for a test to catch it running.
