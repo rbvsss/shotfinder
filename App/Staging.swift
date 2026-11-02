@@ -26,8 +26,8 @@ final class FakeClaude: URLProtocol {
         request
     }
 
-    private static func answer(x: Int, y: Int, lens: String) -> String {
-        let shot = #"{\"label\":\"distant church spires\",\"tip\":\"Keep the horizon low.\",\"x\":\#(x),\"y\":\#(y),\"lens\":\"\#(lens)\"}"#
+    private static func answer(x1: Int, y1: Int, x2: Int, y2: Int) -> String {
+        let shot = #"{\"label\":\"distant church spires\",\"tip\":\"Keep the horizon low.\",\"x1\":\#(x1),\"y1\":\#(y1),\"x2\":\#(x2),\"y2\":\#(y2)}"#
         return #"{"content":[{"type":"text","text":"\#(shot)"}],"stop_reason":"end_turn"}"#
     }
 
@@ -37,13 +37,13 @@ final class FakeClaude: URLProtocol {
         case "offline":
             client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
             return
-        case "off-center": reply = (200, Self.answer(x: 650, y: 820, lens: "1.5"))
+        case "off-center": reply = (200, Self.answer(x1: 530, y1: 730, x2: 770, y2: 910))
         case "bad-key": reply = (401, #"{"error":{"message":"invalid x-api-key"}}"#)
         case "no-credits": reply = (400, #"{"error":{"message":"Your credit balance is too low"}}"#)
         case "busy": reply = (529, #"{"error":{"message":"Overloaded"}}"#)
         case "refused": reply = (200, #"{"content":[],"stop_reason":"refusal"}"#)
         case "garbled": reply = (200, "not json")
-        default: reply = (200, Self.answer(x: 450, y: 600, lens: "1"))
+        default: reply = (200, Self.answer(x1: 270, y1: 465, x2: 630, y2: 735))
         }
 
         // "slow" holds the scan long enough for a test to catch it running.

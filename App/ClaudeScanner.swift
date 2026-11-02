@@ -48,70 +48,52 @@ enum ClaudeScanner {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private static let systemPrompt = """
-    You are a picture editor with a sharp eye. This is the ultra-wide view from a phone. Pick the one \
-    photograph worth taking inside it. The photographer will turn to your frame, zoom in and shoot \
-    exactly what it holds.
+    You are a sharp-eyed photographer looking at the ultra-wide view from a phone. Find the one subject \
+    worth a photograph. The app will zoom in and frame it for the photographer.
 
-    How to choose:
-    - Pick one clear subject: a thing or tight group with light on it, colour, texture, or a shape that \
-    stands apart from its surroundings. Choose the obvious best subject, not a clever one, so the same \
-    scene gets the same answer.
+    Choose the subject:
+    - One clear thing or one person, not a row, a group or a whole room. Pick what the eye goes to \
+    first: the best-lit, most colourful or most characterful object, or a person doing something.
     - People come first. If someone other than the photographer is in view, they are almost always the \
-    picture: frame the person and what they are doing, their face, hands or gesture, not the room.
-    - Frame it tightly. Zooming compresses depth and removes clutter, so a 2x to 4x frame almost always \
-    beats a wide one. Go wider only when the breadth itself is the picture, such as a landscape, a \
-    skyline or a dramatic sky.
-    - Keep layers when they are there: something in front of or behind the subject gives depth.
-    - Centre the frame on the subject itself, then check the edges: nothing important cut, no bright \
-    scraps at the border, and no more than a third of the frame empty wall, ceiling or sky, or plain \
-    foreground such as a tablecloth, floor or road.
+    subject: their face, their hands, or what they are doing.
+    - Choose the obvious subject, not a clever one, so the same scene gets the same answer.
+    - It must be clearly visible and big enough to be sharp, not lost in shadow or tiny in the distance.
 
-    Never choose:
-    - A screen, poster or picture as the subject.
-    - The photographer's own legs, feet, lap or hands, which often show at the bottom of the view.
-    - Anything lost in shadow, or too small and far away to be sharp.
-    - A ceiling or wall with little else in the frame.
-    - Fittings nobody would photograph: sockets, plugs, cables, switches, radiators, bins.
+    Never choose the photographer. Hands, arms, knees or feet that reach in from the bottom or sides, \
+    close to the lens, are theirs, even on a mouse or keyboard. Never choose a poster or picture on a \
+    wall, a plain ceiling, wall or floor, or fittings nobody would photograph, such as sockets, plugs, \
+    cables, switches, radiators or bins.
 
     Return:
-    - label: what the shot shows, in 2 to 4 specific lowercase words.
-    - tip: one short sentence under 9 words, ending in a full stop, on what makes this frame work and \
-    how to hold it. It must be possible with only the phone: never ask to move things, change lights or \
-    wait for something unlikely. Examples: "Keep the bowls low in the frame." "Let the lamp glow \
-    against the dark wall."
-    - x, y: the centre of your frame, in pixels of this image, where 0,0 is the top left corner.
-    - lens: the lens for your frame, from the list given with the image.
+    - label: the subject in 2 to 4 specific lowercase words, such as "potted fern" or "student at computer".
+    - tip: one short sentence under 10 words, ending in a full stop, on how to shoot it with only the \
+    phone. Examples: "Isolate the lamp, keep the shade glowing." "Keep the mug sharp against the window."
+    - x1, y1, x2, y2: the subject's tight bounding box in pixels of this image, where 0,0 is the top \
+    left corner. Include all of the subject and nothing else.
     """
 
-    /// The zooms Claude can choose from. Whole frames only, so the box always matches a real view.
-    private static let lenses = ["0.7", "1", "1.5", "2", "2.5", "3", "4"]
+    /// The zooms a shot can use, so the box always matches a view the phone can give.
+    private static let lenses = [1, 1.5, 2, 2.5, 3, 4]
+    /// How much of the frame's width or height the subject fills, leaving room around it.
+    private static let subjectFill = 0.8
 
     private static let schema: [String: Any] = [
         "type": "object",
         "properties": [
             "label": ["type": "string"],
             "tip": ["type": "string"],
-            "x": ["type": "number"],
-            "y": ["type": "number"],
-            "lens": ["type": "string", "enum": lenses]
+            "x1": ["type": "number"],
+            "y1": ["type": "number"],
+            "x2": ["type": "number"],
+            "y2": ["type": "number"]
         ],
-        "required": ["label", "tip", "x", "y", "lens"],
+        "required": ["label", "tip", "x1", "y1", "x2", "y2"],
         "additionalProperties": false
     ]
 
     static func scan(frame: ScanFrame, ratio: CaptureRatio, scanLens: Double, apiKey: String) async throws -> ScanResult {
         let crop = ratio.cropInViewfinder
-        let frames = lenses.compactMap { name -> String? in
-            guard let lens = Double(name) else { return nil }
-            let scale = min(scanLens / lens, 1)
-            let width = Int(Double(frame.width) * Double(crop.width) * scale)
-            let height = Int(Double(frame.height) * Double(crop.height) * scale)
-            return "\(name): \(width)x\(height)"
-        }
-        let request = """
-        This image is \(frame.width)x\(frame.height) pixels. Your frame is \(ratio.rawValue) (width to height). \
-        Each lens gives a frame of this size in pixels of this image: \(frames.joined(separator: ", ")).
-        """
+        let request = "This image is \(frame.width)x\(frame.height) pixels."
         let body: [String: Any] = [
             "model": "claude-opus-5-5",
             "max_tokens": 6000,
@@ -181,21 +163,33 @@ enum ClaudeScanner {
     private struct Shot: Decodable {
         let label: String
         let tip: String
-        let x: Double
-        let y: Double
-        let lens: String
+        let x1: Double
+        let y1: Double
+        let x2: Double
+        let y2: Double
 
-        /// The lens sets the frame's size, and the frame is then kept inside the image.
+        /// Frames the subject at the closest lens that still holds it with room around it, kept inside the image.
         func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
-            guard let zoom = Double(lens), zoom > 0 else { return nil }
+            let width = Double(frame.width)
+            let height = Double(frame.height)
+            let left = min(max(x1, 0), width)
+            let right = min(max(x2, 0), width)
+            let top = min(max(y1, 0), height)
+            let bottom = min(max(y2, 0), height)
+            guard right > left, bottom > top else { return nil }
+
+            // The share of the widest frame the shot needs, and the zoom that gives exactly that.
+            let needed = max((right - left) / width / Double(crop.width), (bottom - top) / height / Double(crop.height)) / ClaudeScanner.subjectFill
+            let exact = scanLens / needed
+            let zoom = ClaudeScanner.lenses.last { $0 <= exact + 0.01 } ?? max(exact, scanLens)
             let scale = min(scanLens / zoom, 1)
             let halfWidth = scale * Double(crop.width) / 2
             let halfHeight = scale * Double(crop.height) / 2
             return ScanResult(
                 label: label,
                 tip: tip,
-                centerX: min(max(x / Double(frame.width), halfWidth), 1 - halfWidth),
-                centerY: min(max(y / Double(frame.height), halfHeight), 1 - halfHeight),
+                centerX: min(max((left + right) / 2 / width, halfWidth), 1 - halfWidth),
+                centerY: min(max((top + bottom) / 2 / height, halfHeight), 1 - halfHeight),
                 size: scale * Double(crop.width)
             )
         }
