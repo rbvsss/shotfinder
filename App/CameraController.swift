@@ -46,6 +46,8 @@ final class CameraController: NSObject {
 
     /// Reports the real zoom factor as it changes, including during a ramp.
     @ObservationIgnored var onZoomFactorChange: ((Double) -> Void)?
+    /// Gets every video frame, upright, on the camera's queue. Set before the camera starts.
+    @ObservationIgnored var onVideoFrame: ((CVPixelBuffer) -> Void)?
     @ObservationIgnored private(set) var optics: CameraOptics?
 
     let session = AVCaptureSession()
@@ -573,6 +575,10 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         if wantsPlaceholder, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
             wantsPlaceholder = false
             showPlaceholder(from: pixels)
+        }
+
+        if let onVideoFrame, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            onVideoFrame(pixels)
         }
 
         guard let continuation = pendingFrame else { return }

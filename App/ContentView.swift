@@ -483,6 +483,10 @@ struct ContentView: View {
         camera.onZoomFactorChange = { [motion] factor in
             motion.setZoomFactor(factor)
         }
+        if camera.onVideoFrame == nil {
+            let tracker = SubjectTracker(motion: motion)
+            camera.onVideoFrame = { tracker.process($0) }
+        }
         camera.start()
         motion.start()
     }

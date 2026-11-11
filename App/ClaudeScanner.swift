@@ -16,6 +16,8 @@ struct ScanResult {
     let centerY: Double
     /// The shot's width as a fraction of the image width.
     let size: Double
+    /// The subject itself, as fractions of the image, for following it in the live picture.
+    var subject: CGRect?
 }
 
 enum ScanError: LocalizedError {
@@ -200,7 +202,8 @@ enum ClaudeScanner {
                 tip: tip,
                 centerX: min(max((left + right) / 2 / width, halfWidth), 1 - halfWidth),
                 centerY: min(max((top + bottom) / 2 / height, halfHeight), 1 - halfHeight),
-                size: scale * Double(crop.width)
+                size: scale * Double(crop.width),
+                subject: CGRect(x: left / width, y: top / height, width: (right - left) / width, height: (bottom - top) / height)
             )
         }
     }

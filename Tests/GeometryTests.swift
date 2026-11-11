@@ -50,10 +50,52 @@ final class GeometryTests: XCTestCase {
     func testRoughlyPointingAtTheShotCountsAsLinedUp() {
         let nearlyThere = GuideProjection(x: 0.55, y: 0.54, width: 0.8, height: 0.8, fill: 0.8)
         let tooFarIn = GuideProjection(x: 0.5, y: 0.5, width: 1.3, height: 1.3, fill: 1.3)
-        let offToTheSide = GuideProjection(x: 0.62, y: 0.5, width: 1, height: 1, fill: 1)
+        let offToTheSide = GuideProjection(x: 0.66, y: 0.5, width: 1, height: 1, fill: 1)
         XCTAssertTrue(nearlyThere.isCentered && nearlyThere.isZoomed)
         XCTAssertFalse(tooFarIn.isZoomed, "Zooming far past the shot cuts the subject")
         XCTAssertFalse(offToTheSide.isCentered)
+        XCTAssertTrue(offToTheSide.staysAligned, "Once lined up, a small move doesn't lose it")
+        XCTAssertFalse(GuideProjection(x: 0.75, y: 0.5, width: 1, height: 1, fill: 1).staysAligned)
+    }
+
+    func testSubjectBoxFollowsTheZoom() throws {
+        var result = ScanResult(label: "a", tip: "b", centerX: 0.7, centerY: 0.25, size: 0.5)
+        result.subject = CGRect(x: 0.6, y: 0.2, width: 0.2, height: 0.1)
+        let scanned = ScanTarget(result: result, optics: optics, scanZoomFactor: 1, scanLens: 0.5, ratio: .threeFour)
+
+        let asScanned = try XCTUnwrap(scanned.subjectBox(rotation: identity, optics: optics, zoomFactor: 1))
+        XCTAssertEqual(asScanned.midX, 0.7, accuracy: 0.0001)
+        XCTAssertEqual(asScanned.midY, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(asScanned.width, 0.2, accuracy: 0.0001)
+
+        let zoomed = try XCTUnwrap(scanned.subjectBox(rotation: identity, optics: optics, zoomFactor: 2))
+        XCTAssertEqual(zoomed.midX, 0.9, accuracy: 0.0001)
+        XCTAssertEqual(zoomed.midY, 0, accuracy: 0.0001)
+        XCTAssertEqual(zoomed.height, 0.2, accuracy: 0.0001)
+    }
+
+    func testSeeingTheSubjectElsewhereMovesTheGuideThere() throws {
+        let motion = MotionTracker()
+        motion.setTarget(target(x: 0.7, y: 0.3), optics: optics, crop: CGSize(width: 1, height: 1))
+        let start = try XCTUnwrap(motion.snapshot().projection)
+        XCTAssertEqual(start.x, 0.7, accuracy: 0.0001)
+
+        // The phone was moved, not turned, so only the picture shows the subject is now mid-view.
+        for _ in 0..<30 {
+            motion.follow(subjectAt: CGPoint(x: 0.5, y: 0.5))
+        }
+        let moved = try XCTUnwrap(motion.snapshot().projection)
+        XCTAssertEqual(moved.x, 0.5, accuracy: 0.001)
+        XCTAssertEqual(moved.y, 0.5, accuracy: 0.001)
+    }
+
+    func testTheCameraIsToldWhereToLookForTheSubject() throws {
+        let motion = MotionTracker()
+        XCTAssertNil(motion.expectedSubject(), "Nothing to follow before a scan")
+        motion.setTarget(target(x: 0.5, y: 0.5, size: 1), optics: optics, crop: CGSize(width: 1, height: 1))
+        let expected = try XCTUnwrap(motion.expectedSubject())
+        XCTAssertEqual(expected.box.midX, 0.5, accuracy: 0.0001)
+        XCTAssertTrue(expected.isSteady)
     }
 
     func testShotBehindThePhoneHasNoPosition() {

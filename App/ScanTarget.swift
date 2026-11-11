@@ -12,6 +12,9 @@ struct ScanTarget {
     let scanZoomFactor: Double
     /// The zoom, as shown on the lens buttons, at which the shot fills the frame.
     let lens: Double
+    /// Direction and size of the subject itself, which the camera follows in the live picture.
+    let subjectRay: SIMD3<Double>
+    let subjectSize: CGSize
 
     init(result: ScanResult, optics: CameraOptics, scanZoomFactor: Double, scanLens: Double, ratio: CaptureRatio) {
         let centerX = min(max(result.centerX, 0), 1)
@@ -22,11 +25,35 @@ struct ScanTarget {
         self.scale = scale
         self.scanZoomFactor = scanZoomFactor
         lens = scanLens / scale
-        ray = simd_normalize(SIMD3(
-            (2 * centerX - 1) * optics.tanHorizontal / scanZoomFactor,
-            (1 - 2 * centerY) * optics.tanVertical / scanZoomFactor,
+        ray = Self.direction(x: centerX, y: centerY, optics: optics, zoomFactor: scanZoomFactor)
+        if let subject = result.subject {
+            subjectRay = Self.direction(x: Double(subject.midX), y: Double(subject.midY), optics: optics, zoomFactor: scanZoomFactor)
+            subjectSize = subject.size
+        } else {
+            subjectRay = ray
+            subjectSize = CGSize(width: result.size, height: result.size)
+        }
+    }
+
+    /// The direction of a point given as fractions of the viewfinder at a zoom.
+    static func direction(x: Double, y: Double, optics: CameraOptics, zoomFactor: Double) -> SIMD3<Double> {
+        simd_normalize(SIMD3(
+            (2 * x - 1) * optics.tanHorizontal / zoomFactor,
+            (1 - 2 * y) * optics.tanVertical / zoomFactor,
             -1
         ))
+    }
+
+    /// Where the subject itself should be now, as fractions of the viewfinder. Nil when it is behind the phone.
+    func subjectBox(rotation: simd_quatd, optics: CameraOptics, zoomFactor: Double) -> CGRect? {
+        let current = rotation.act(subjectRay)
+        guard current.z < -0.01 else { return nil }
+        let x = (current.x / -current.z / (optics.tanHorizontal / zoomFactor) + 1) / 2
+        let y = (1 - current.y / -current.z / (optics.tanVertical / zoomFactor)) / 2
+        let growth = zoomFactor / scanZoomFactor
+        let width = Double(subjectSize.width) * growth
+        let height = Double(subjectSize.height) * growth
+        return CGRect(x: x - width / 2, y: y - height / 2, width: width, height: height)
     }
 
     /// Where the shot currently appears, as fractions of the viewfinder. Nil when it is behind the phone.
@@ -54,9 +81,9 @@ struct GuideProjection {
     /// How much of the crop the shot covers. 1 means it fills the frame exactly.
     let fill: Double
 
-    /// Close enough that the subject sits well inside the frame, so roughly pointing at it counts.
+    /// Close enough that the subject is in the frame, so roughly pointing at it counts.
     var isCentered: Bool {
-        hypot(x - 0.5, y - 0.5) < 0.08
+        hypot(x - 0.5, y - 0.5) < 0.13
     }
 
     /// Any zoom from a little wide to just past the shot. Further in would cut the subject.
@@ -65,7 +92,7 @@ struct GuideProjection {
     }
 
     var staysAligned: Bool {
-        hypot(x - 0.5, y - 0.5) < 0.11 && fill > 0.6 && fill < 1.25
+        hypot(x - 0.5, y - 0.5) < 0.2 && fill > 0.6 && fill < 1.25
     }
 
     /// Whether the shot would still be near the middle after zooming in by this much.

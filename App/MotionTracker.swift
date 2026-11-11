@@ -29,7 +29,9 @@ final class MotionTracker {
         var optics: CameraOptics?
         var crop = CGSize(width: 1, height: 1)
         var zoomFactor = 1.0
+        var zoomChangedAt: TimeInterval = 0
         var zoomIsManual = false
+        var turnSpeed = 0.0
         var guide = GuideState()
     }
 
@@ -47,8 +49,12 @@ final class MotionTracker {
     private static let maxStep: TimeInterval = 0.2
     /// How far past a quarter turn the phone must go before icons and photos follow, to stop flicker.
     private static let turnThreshold = 55.0 * Double.pi / 180
-    private static let levelTolerance = 3 * Double.pi / 180
-    private static let alignedLevelTolerance = 4.5 * Double.pi / 180
+    /// How long after a zoom the picture is still changing size, so the subject can't be followed in it.
+    private static let zoomSettleTime: TimeInterval = 0.4
+    /// Turning faster than this, in radians a second, the picture lags too far behind the gyroscope to compare.
+    private static let steadyTurnSpeed = 0.6
+    /// How far the guide moves towards each sighting of the subject, so it follows without jitter.
+    private static let followStrength = 0.4
 
     func start() {
         guard Self.manager.isDeviceMotionAvailable, !Self.manager.isDeviceMotionActive else { return }
@@ -82,7 +88,38 @@ final class MotionTracker {
     }
 
     func setZoomFactor(_ factor: Double) {
-        refreshGuide { $0.zoomFactor = factor }
+        refreshGuide { live in
+            if factor != live.zoomFactor {
+                live.zoomChangedAt = ProcessInfo.processInfo.systemUptime
+            }
+            live.zoomFactor = factor
+        }
+    }
+
+    /// Where the subject should be in the live picture now, as fractions of the viewfinder.
+    /// Nil with no shot, with the shot behind the phone, or while the zoom is changing.
+    func expectedSubject() -> (box: CGRect, isSteady: Bool)? {
+        lock.withLock { () -> (box: CGRect, isSteady: Bool)? in
+            guard let target = live.target, let optics = live.optics,
+                  ProcessInfo.processInfo.systemUptime - live.zoomChangedAt > Self.zoomSettleTime,
+                  let box = target.subjectBox(rotation: live.rotation, optics: optics, zoomFactor: live.zoomFactor) else {
+                return nil
+            }
+            return (box, live.turnSpeed < Self.steadyTurnSpeed)
+        }
+    }
+
+    /// Moves the guide towards where the camera sees the subject, which also catches the phone being moved.
+    func follow(subjectAt point: CGPoint) {
+        refreshGuide { live in
+            guard let target = live.target, let optics = live.optics, live.turnSpeed < Self.steadyTurnSpeed else { return }
+            let expected = live.rotation.act(target.subjectRay)
+            guard expected.z < -0.01 else { return }
+            let seen = ScanTarget.direction(x: Double(point.x), y: Double(point.y), optics: optics, zoomFactor: live.zoomFactor)
+            let whole = simd_quatd(from: simd_normalize(expected), to: seen)
+            let part = simd_slerp(simd_quatd(ix: 0, iy: 0, iz: 0, r: 1), whole, Self.followStrength)
+            live.rotation = simd_normalize(part * live.rotation)
+        }
     }
 
     /// Stops auto-zoom from fighting the user, or from running twice.
@@ -124,10 +161,11 @@ final class MotionTracker {
                 }
             }
 
+            let speed = simd_length(rate)
+            live.turnSpeed = speed
             defer { live.lastTimestamp = timestamp }
             guard let last = live.lastTimestamp else { return }
             let step = timestamp - last
-            let speed = simd_length(rate)
             guard step > 0, step < Self.maxStep, speed > 0 else { return }
             // The phone turned by this much, so a fixed point in the scene turned the opposite way.
             let turn = simd_quatd(angle: speed * step, axis: rate / speed)
@@ -178,10 +216,10 @@ final class MotionTracker {
         guard let projection = projection(in: live) else { return GuideState(isBehind: true) }
 
         // Harder to enter than to leave, so the buzz and the colour don't chatter at the edge.
-        let isLevel = live.isFlat || abs(live.roll) < (live.guide.isAligned ? alignedLevelTolerance : levelTolerance)
+        // A tilted phone still counts: the level line shows that on its own.
         let isAligned = live.guide.isAligned
-            ? projection.staysAligned && isLevel
-            : projection.isCentered && projection.isZoomed && isLevel
+            ? projection.staysAligned
+            : projection.isCentered && projection.isZoomed
 
         let wantsAutoZoom = !live.zoomIsManual
             && projection.fill < 0.95
