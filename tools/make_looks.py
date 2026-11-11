@@ -264,6 +264,77 @@ def salt(rgb):
     )
 
 
+def amber(rgb):
+    """Golden hour on cine stock: glowing warm highlights, teal shadows, firm contrast, full colour."""
+    return film(
+        rgb,
+        layers=[[0.95, 0.04, 0.01], [0.012, 0.968, 0.02], [0.008, 0.052, 0.94]],
+        couplers=0.14,
+        tone=[(0, 0.016), (0.1, 0.062), (0.25, 0.205), (0.5, 0.520), (0.75, 0.800), (0.9, 0.925), (1, 0.972)],
+        keep_hue=0.4,
+        table=[
+            (29, 26, 4, 1.02, 0.04),      # reds warm towards orange
+            (70, 28, -2, 1.10, 0.0),      # oranges glow
+            (108, 26, -8, 1.02, 0.0),     # yellows turn gold
+            (142, 30, -6, 0.78, 0.10),    # greens quieten to olive
+            (205, 30, 4, 0.92, 0.06),     # cyan holds as teal
+            (255, 30, -14, 0.86, 0.12),   # blues swing to teal
+        ],
+        chroma_curve=[(0, 0.8), (0.25, 1.0), (0.6, 1.06), (0.85, 0.92), (1, 0.6)],
+        density=0.05,
+        tint_a=[(0, -0.008), (0.25, -0.008), (0.55, 0.002), (0.8, 0.008), (1, 0.006)],
+        tint_b=[(0, -0.012), (0.25, -0.010), (0.55, 0.008), (0.8, 0.022), (1, 0.016)],
+        skin_saturation=1.0,
+    )
+
+
+def moss(rgb):
+    """Faded print left in a drawer: lifted matte blacks, soft contrast, earthy greens, quiet colour."""
+    return film(
+        rgb,
+        layers=[[0.90, 0.08, 0.02], [0.03, 0.93, 0.04], [0.02, 0.08, 0.90]],
+        couplers=0.02,
+        tone=[(0, 0.085), (0.1, 0.150), (0.25, 0.275), (0.5, 0.510), (0.75, 0.735), (0.9, 0.850), (1, 0.915)],
+        keep_hue=0.6,
+        table=[
+            (29, 26, 4, 0.82, 0.0),       # reds to brick
+            (108, 26, -4, 0.84, 0.0),     # yellows to straw
+            (142, 30, -8, 0.82, 0.06),    # greens to moss
+            (205, 30, 6, 0.70, 0.0),      # cyan fades
+            (255, 30, 4, 0.66, 0.04),     # blues fade to slate
+        ],
+        chroma_curve=[(0, 0.55), (0.3, 0.74), (0.6, 0.78), (0.85, 0.66), (1, 0.45)],
+        density=0.02,
+        tint_a=[(0, -0.003), (0.3, -0.002), (0.6, 0.002), (1, 0.003)],
+        tint_b=[(0, 0.010), (0.3, 0.008), (0.6, 0.008), (1, 0.010)],
+        skin_saturation=0.92,
+    )
+
+
+def neon(rgb):
+    """Night city on fast colour film: deep blue-violet shadows, hot magenta and cyan lights, hard contrast."""
+    return film(
+        rgb,
+        layers=[[0.96, 0.03, 0.01], [0.01, 0.97, 0.02], [0.005, 0.035, 0.96]],
+        couplers=0.18,
+        tone=[(0, 0.010), (0.1, 0.045), (0.25, 0.170), (0.5, 0.490), (0.75, 0.810), (0.9, 0.940), (1, 0.985)],
+        keep_hue=0.45,
+        table=[
+            (0, 26, -10, 1.12, 0.0),      # pinks and reds push to magenta
+            (70, 26, 4, 0.92, 0.02),      # oranges cool a little
+            (142, 30, 18, 0.80, 0.08),    # greens to cyan-green
+            (205, 30, 2, 1.14, 0.0),      # cyan lights burn
+            (255, 30, 10, 1.08, 0.06),    # blues to violet
+            (320, 28, -4, 1.12, 0.0),     # magentas burn
+        ],
+        chroma_curve=[(0, 0.9), (0.25, 1.08), (0.6, 1.10), (0.85, 0.95), (1, 0.6)],
+        density=0.06,
+        tint_a=[(0, 0.006), (0.25, 0.006), (0.55, 0.001), (1, 0.0)],
+        tint_b=[(0, -0.022), (0.25, -0.018), (0.55, -0.004), (1, 0.0)],
+        skin_saturation=1.0,
+    )
+
+
 def graphite(rgb):
     """Black and white after Tri-X with a red-filter lean: long toe, bright midtones, dark skies."""
     mono = to_encoded(to_linear(rgb) @ np.array([0.36, 0.56, 0.08]))
@@ -271,7 +342,7 @@ def graphite(rgb):
     return np.stack([y, y, y], axis=-1)
 
 
-LOOKS = {"kiln": kiln, "fjord": fjord, "cinder": cinder, "salt": salt, "graphite": graphite}
+LOOKS = {"kiln": kiln, "amber": amber, "fjord": fjord, "moss": moss, "cinder": cinder, "neon": neon, "salt": salt, "graphite": graphite}
 
 
 def build_cube(look):

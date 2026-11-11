@@ -178,10 +178,10 @@ final class ClaudeScannerTests: XCTestCase {
 
         let result = try await scan()
 
-        // Down until the subject's lower edge is in, and right until the frame is inside the image.
+        // Down until the subject's lower edge is in with a little air, and right until the frame is inside the image.
         XCTAssertEqual(result.size, 0.5 / 0.7, accuracy: 0.0001)
         XCTAssertEqual(result.centerX, 0.5 / 0.7 / 2, accuracy: 0.0001)
-        XCTAssertEqual(result.centerY, 0.6 - 0.5 / 0.7 * 0.75 / 2, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.6 - 0.9 * (0.5 / 0.7 * 0.75 / 2), accuracy: 0.0001)
     }
 
     func testBigSubjectUsesTheWholeView() async throws {

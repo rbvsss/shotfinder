@@ -65,7 +65,7 @@ enum Adjustment: String, CaseIterable, Identifiable {
 }
 
 enum Look: String, CaseIterable, Identifiable {
-    case natural, kiln, fjord, cinder, salt, graphite
+    case natural, kiln, amber, fjord, moss, cinder, neon, salt, graphite
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }

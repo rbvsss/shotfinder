@@ -50,12 +50,14 @@ def frame_for(shot, width, height):
         fl, fr = sorted((min(max(shot["fx1"], 0), width), min(max(shot["fx2"], 0), width)))
         ft, fb = sorted((min(max(shot["fy1"], 0), height), min(max(shot["fy2"], 0), height)))
         # Never tighter than the subject itself, whatever the model drew.
-        needed = max((fr - fl) / width, (fb - ft) / height, (right - left) / width, (bottom - top) / height)
+        needed = max((fr - fl) / width, (fb - ft) / height, (right - left) / width / SUBJECT_FILL, (bottom - top) / height / SUBJECT_FILL)
         mx, my = (fl + fr) / 2 / width, (ft + fb) / 2 / height
         # Slide the frame so the whole subject is inside it.
+        # The subject keeps a little air on every side: a twentieth of the frame.
+        air = needed * (1 - SUBJECT_FILL) / 2
         hold = lambda low, high, middle: (low + high) / 2 if high - low > needed else min(max(middle, high - needed / 2), low + needed / 2)
-        mx = hold(left / width, right / width, mx)
-        my = hold(top / height, bottom / height, my)
+        mx = hold(left / width - air, right / width + air, mx)
+        my = hold(top / height - air, bottom / height + air, my)
     else:
         needed = max((right - left) / width, (bottom - top) / height) / SUBJECT_FILL
         mx, my = (left + right) / 2 / width, (top + bottom) / 2 / height
@@ -77,7 +79,7 @@ def scan(path, args, prompt, key):
         extra = ("fx1", "fy1", "fx2", "fy2")
         schema = SCHEMA | {"properties": SCHEMA["properties"] | {k: {"type": "number"} for k in extra}, "required": SCHEMA["required"] + list(extra)}
     if "- look:" in prompt:
-        looks = ["natural", "kiln", "fjord", "cinder", "salt", "graphite"]
+        looks = ["natural", "kiln", "amber", "fjord", "moss", "cinder", "neon", "salt", "graphite"]
         schema = schema | {"properties": schema["properties"] | {"look": {"type": "string", "enum": looks}}, "required": schema["required"] + ["look"]}
     output = {"format": {"type": "json_schema", "schema": schema}}
     if args.effort != "none":

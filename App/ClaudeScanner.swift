@@ -82,13 +82,14 @@ enum ClaudeScanner {
 
     Compose the frame, a crop of this image in the shape given with it, the way a film still is \
     composed:
-    - Go in close. The subject fills about two thirds of the frame's width or height: enough room to \
-    breathe, never lost in its surroundings.
+    - Go in close. The subject fills two thirds to three quarters of the frame's width or height. When \
+    unsure, go tighter: a frame that is nearly all subject beats one that is half surroundings.
     - Place it with intent: on a third with space in the direction it faces or moves, or dead centre \
     when the scene is symmetrical.
     - Keep what adds to the picture, such as light falling on it, a leading line, a foreground edge or a \
     reflection. Leave out clutter, bright distractions and anything cut off awkwardly at the frame edge.
-    - The whole subject is inside the frame, and the frame stays inside the image.
+    - Every part of the subject is inside the frame with a little air around it: no clipped tips, feet, \
+    wheels, letters or edges. The frame stays inside the image.
 
     Return:
     - label: the subject in 2 or 3 plain lowercase words, the way you would say it out loud, such as \
@@ -102,16 +103,19 @@ enum ClaudeScanner {
     - x1, y1, x2, y2: the subject's tight bounding box in pixels of this image, where 0,0 is the top \
     left corner.
     - fx1, fy1, fx2, fy2: the frame, in the same pixels.
-    - look: the colour that suits this shot. "natural" is true colour. "kiln" is warm, soft and honeyed, \
-    for people and warm light. "fjord" is cool, airy and pastel, for daylight, water and greenery. \
-    "cinder" is dark and dense with teal shadows, for night, neon and moody rooms. "salt" is pale, \
-    bright and chalky, for minimal high-key scenes. "graphite" is black and white, for strong shapes, \
-    shadows and silhouettes.
+    - look: the colour that suits this shot. "natural" is true colour, for when nothing else clearly \
+    fits. "kiln" is warm, soft and honeyed, for people and gentle indoor light. "amber" is golden with \
+    teal shadows and firm contrast, for sunsets, low sun and warm lamps. "fjord" is cool, airy and \
+    pastel, for daylight, water and greenery. "moss" is faded and earthy with matte blacks, for quiet, \
+    worn or overcast scenes. "cinder" is dark and dense with teal shadows, for moody rooms and dim \
+    streets. "neon" is violet shadows with hot magenta and cyan, for city lights and signs at night. \
+    "salt" is pale, bright and chalky, for minimal high-key scenes. "graphite" is black and white, for \
+    strong shapes, shadows and silhouettes.
     """
 
     /// The longest zoom a shot can ask for, where the telephoto still gives a clean picture.
     private static let longestZoom = 4.0
-    /// How much of the frame the subject fills when Claude gives no frame of its own.
+    /// The most of the frame the subject may fill, which leaves a little air on every side.
     private static let subjectFill = 0.9
 
     private static let schema: [String: Any] = [
@@ -238,7 +242,7 @@ enum ClaudeScanner {
             return min(max(middle, high - half), low + half)
         }
 
-        /// The zoom and place of Claude's frame, never tighter than the subject and kept inside the image.
+        /// The zoom and place of Claude's frame, never too tight for the subject and kept inside the image.
         func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
             guard let subject = Self.viewBox(x1, y1, x2, y2, in: frame) else { return nil }
             let cropWidth = Double(crop.width)
@@ -249,7 +253,7 @@ enum ClaudeScanner {
             var needed = subjectShare / ClaudeScanner.subjectFill
             var middle = CGPoint(x: subject.midX, y: subject.midY)
             if let fx1, let fy1, let fx2, let fy2, let composed = Self.viewBox(fx1, fy1, fx2, fy2, in: frame) {
-                needed = max(Double(composed.width) / cropWidth, Double(composed.height) / cropHeight, subjectShare)
+                needed = max(Double(composed.width) / cropWidth, Double(composed.height) / cropHeight, needed)
                 middle = CGPoint(x: composed.midX, y: composed.midY)
             }
             // To a tenth, as the zoom row shows it, and downwards so the frame is never tighter than asked.
@@ -258,9 +262,20 @@ enum ClaudeScanner {
             let scale = min(scanLens / zoom, 1)
             let halfWidth = scale * Double(crop.width) / 2
             let halfHeight = scale * Double(crop.height) / 2
-            // Slide the frame so the whole subject is inside it, then keep it inside the image.
-            let centerX = Self.holding(Double(subject.minX), Double(subject.maxX), from: Double(middle.x), half: halfWidth)
-            let centerY = Self.holding(Double(subject.minY), Double(subject.maxY), from: Double(middle.y), half: halfHeight)
+            // Slide the frame so the subject and the air around it are inside, then keep it inside the image.
+            let air = 1 - ClaudeScanner.subjectFill
+            let centerX = Self.holding(
+                Double(subject.minX) - halfWidth * air,
+                Double(subject.maxX) + halfWidth * air,
+                from: Double(middle.x),
+                half: halfWidth
+            )
+            let centerY = Self.holding(
+                Double(subject.minY) - halfHeight * air,
+                Double(subject.maxY) + halfHeight * air,
+                from: Double(middle.y),
+                half: halfHeight
+            )
             return ScanResult(
                 label: label,
                 tip: tip,

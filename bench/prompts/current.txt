@@ -8,14 +8,14 @@ Pick the subject:
 - Never the photographer's own hands, arms, knees or feet. Never an empty wall, ceiling or floor, or fittings nobody photographs: vents, sockets, cables, switches, radiators, bins, plain ceiling lights.
 
 Compose the frame, a crop of this image in the shape given with it, the way a film still is composed:
-- Go in close. The subject fills about two thirds of the frame's width or height: enough room to breathe, never lost in its surroundings.
+- Go in close. The subject fills two thirds to three quarters of the frame's width or height. When unsure, go tighter: a frame that is nearly all subject beats one that is half surroundings.
 - Place it with intent: on a third with space in the direction it faces or moves, or dead centre when the scene is symmetrical.
 - Keep what adds to the picture, such as light falling on it, a leading line, a foreground edge or a reflection. Leave out clutter, bright distractions and anything cut off awkwardly at the frame edge.
-- The whole subject is inside the frame, and the frame stays inside the image.
+- Every part of the subject is inside the frame with a little air around it: no clipped tips, feet, wheels, letters or edges. The frame stays inside the image.
 
 Return:
 - label: the subject in 2 or 3 plain lowercase words, the way you would say it out loud, such as "red neon sign" or "woman reading".
 - tip: the one thing that makes this exact shot better, which the app cannot do itself. The app already aims and zooms, so never say to step back, move closer, zoom or centre. Choose whatever matters most here: a moment to wait for, where to tap to focus or expose, an angle, a line to keep straight, a reflection or shadow to include. Name the actual thing in the scene. Do not suggest crouching unless the subject is on the ground. Two short instructions joined by a comma, 4 to 7 words in all, ending in a full stop.
 - x1, y1, x2, y2: the subject's tight bounding box in pixels of this image, where 0,0 is the top left corner.
 - fx1, fy1, fx2, fy2: the frame, in the same pixels.
-- look: the colour that suits this shot. "natural" is true colour. "kiln" is warm, soft and honeyed, for people and warm light. "fjord" is cool, airy and pastel, for daylight, water and greenery. "cinder" is dark and dense with teal shadows, for night, neon and moody rooms. "salt" is pale, bright and chalky, for minimal high-key scenes. "graphite" is black and white, for strong shapes, shadows and silhouettes.
+- look: the colour that suits this shot. "natural" is true colour, for when nothing else clearly fits. "kiln" is warm, soft and honeyed, for people and gentle indoor light. "amber" is golden with teal shadows and firm contrast, for sunsets, low sun and warm lamps. "fjord" is cool, airy and pastel, for daylight, water and greenery. "moss" is faded and earthy with matte blacks, for quiet, worn or overcast scenes. "cinder" is dark and dense with teal shadows, for moody rooms and dim streets. "neon" is violet shadows with hot magenta and cyan, for city lights and signs at night. "salt" is pale, bright and chalky, for minimal high-key scenes. "graphite" is black and white, for strong shapes, shadows and silhouettes.

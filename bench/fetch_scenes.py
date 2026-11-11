@@ -2,10 +2,9 @@
 import io, json, time, urllib.error, urllib.parse, urllib.request
 from PIL import Image
 
-TOPICS = ["home office desk", "cafe interior", "city street people", "kitchen", "living room", "street market",
-          "park bench", "street at night", "harbour boats", "train station platform", "bedroom", "bar interior",
-          "beach people", "library interior", "old town alley", "workshop tools", "garden house", "town square",
-          "classroom", "mountain village", "restaurant table", "bookshop", "stadium crowd", "office people"]
+TOPICS = ["messy desk", "cluttered room", "my bedroom", "student dorm room", "garage interior", "office cubicle",
+          "supermarket aisle", "bus interior", "waiting room", "backyard", "parking lot", "hallway",
+          "school corridor", "construction site", "laundry room", "balcony view", "gym interior", "shop window"]
 PER_TOPIC = 2
 AGENT = {"User-Agent": "Mozilla/5.0 scene-bench"}
 
