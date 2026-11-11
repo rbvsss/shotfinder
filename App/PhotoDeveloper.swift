@@ -12,17 +12,55 @@ enum BaseTone {
     static let warmth = (red: 1.0, green: 0.97, blue: 0.91)
 
     /// Works on the values the screen shows, so a photo matches what the viewfinder showed.
-    static func apply(to image: CIImage) -> CIImage {
+    /// Hand corrections ride along in the same pass.
+    static func apply(to image: CIImage, _ adjust: Adjustments = Adjustments()) -> CIImage {
         let controls = CIFilter.colorControls()
         controls.inputImage = image.applyingFilter("CILinearToSRGBToneCurve")
-        controls.saturation = Float(saturation)
-        controls.contrast = Float(contrast)
+        controls.saturation = Float(saturation * (1 + 0.5 * adjust.saturation))
+        controls.contrast = Float(contrast * (1 + 0.25 * adjust.contrast))
+        // Exposure brightens everything; fade lifts the blacks and takes a little off the top.
+        let gain = pow(2, 0.8 * adjust.exposure) * (1 - 0.15 * adjust.fade)
+        let lift = 0.1 * adjust.fade
         let matrix = CIFilter.colorMatrix()
         matrix.inputImage = controls.outputImage
-        matrix.rVector = CIVector(x: warmth.red, y: 0, z: 0, w: 0)
-        matrix.gVector = CIVector(x: 0, y: warmth.green, z: 0, w: 0)
-        matrix.bVector = CIVector(x: 0, y: 0, z: warmth.blue, w: 0)
+        matrix.rVector = CIVector(x: warmth.red * gain * (1 + 0.08 * adjust.warmth), y: 0, z: 0, w: 0)
+        matrix.gVector = CIVector(x: 0, y: warmth.green * gain, z: 0, w: 0)
+        matrix.bVector = CIVector(x: 0, y: 0, z: warmth.blue * gain * (1 - 0.12 * adjust.warmth), w: 0)
+        matrix.biasVector = CIVector(x: lift, y: lift, z: lift, w: 0)
         return matrix.outputImage?.applyingFilter("CISRGBToneCurveToLinear").cropped(to: image.extent) ?? image
+    }
+}
+
+/// Hand corrections on top of the look. Zero leaves the photo as it is.
+struct Adjustments: Equatable {
+    var exposure = 0.0
+    var contrast = 0.0
+    var warmth = 0.0
+    var saturation = 0.0
+    var fade = 0.0
+    var vignette = 0.0
+}
+
+enum Adjustment: String, CaseIterable, Identifiable {
+    case exposure, contrast, warmth, saturation, fade, vignette
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+
+    /// Fade and vignette only go one way.
+    var range: ClosedRange<Double> {
+        self == .fade || self == .vignette ? 0...1 : -1...1
+    }
+
+    var keyPath: WritableKeyPath<Adjustments, Double> {
+        switch self {
+        case .exposure: return \.exposure
+        case .contrast: return \.contrast
+        case .warmth: return \.warmth
+        case .saturation: return \.saturation
+        case .fade: return \.fade
+        case .vignette: return \.vignette
+        }
     }
 }
 
@@ -148,6 +186,7 @@ enum GrainLevel: String {
 struct DevelopSettings: Equatable {
     var look: Look = .natural
     var grain: GrainLevel = .off
+    var adjust = Adjustments()
     var frame: PhotoFrame = .none
 }
 
@@ -263,9 +302,22 @@ final class PhotoDeveloper {
     }
 
     private static func develop(_ image: CIImage, _ settings: DevelopSettings) -> CIImage {
-        let toned = settings.look.apply(to: BaseTone.apply(to: image))
-        let grained = addGrain(to: toned, amount: settings.grain.amount)
+        let toned = settings.look.apply(to: BaseTone.apply(to: image, settings.adjust))
+        let shaded = addVignette(to: toned, amount: settings.adjust.vignette)
+        let grained = addGrain(to: shaded, amount: settings.grain.amount)
         return settings.frame.apply(to: grained)
+    }
+
+    /// Darkens towards the corners, sized to the photo so the preview matches the saved file.
+    private static func addVignette(to image: CIImage, amount: Double) -> CIImage {
+        guard amount > 0 else { return image }
+        let filter = CIFilter.vignetteEffect()
+        filter.inputImage = image
+        filter.center = CGPoint(x: image.extent.midX, y: image.extent.midY)
+        filter.radius = Float(hypot(image.extent.width, image.extent.height) / 2)
+        filter.intensity = Float(amount)
+        filter.falloff = 0.6
+        return filter.outputImage?.cropped(to: image.extent) ?? image
     }
 
     private static func addGrain(to image: CIImage, amount: Double) -> CIImage {

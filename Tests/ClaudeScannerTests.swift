@@ -71,8 +71,8 @@ final class ClaudeScannerTests: XCTestCase {
         }
     }
 
-    private func answer(x1: Double, y1: Double, x2: Double, y2: Double) -> Data {
-        let shot = #"{\"label\":\"old barn\",\"tip\":\"Step left.\",\"x1\":\#(x1),\"y1\":\#(y1),\"x2\":\#(x2),\"y2\":\#(y2)}"#
+    private func answer(x1: Double, y1: Double, x2: Double, y2: Double, extra: String = "") -> Data {
+        let shot = #"{\"label\":\"old barn\",\"tip\":\"Step left.\",\"x1\":\#(x1),\"y1\":\#(y1),\"x2\":\#(x2),\"y2\":\#(y2)\#(extra)}"#
         return Data(#"""
         {"content":[{"type":"thinking","thinking":""},{"type":"text","text":"\#(shot)"}],"stop_reason":"end_turn"}
         """#.utf8)
@@ -159,6 +159,29 @@ final class ClaudeScannerTests: XCTestCase {
         )
     }
 
+    func testClaudesOwnFrameSetsTheZoomAndTheLook() async throws {
+        // A frame half the view wide, around a subject well inside it.
+        StubProtocol.body = answer(x1: 279, y1: 600, x2: 441, y2: 720, extra: #",\"fx1\":225,\"fy1\":300,\"fx2\":675,\"fy2\":900,\"look\":\"cinder\""#)
+
+        let result = try await scan()
+
+        XCTAssertEqual(result.size, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.look, .cinder)
+    }
+
+    func testFrameIsMovedToHoldTheWholeSubject() async throws {
+        // The frame sits in the top left corner, but the subject reaches lower than it does.
+        StubProtocol.body = answer(x1: 279, y1: 600, x2: 441, y2: 720, extra: #",\"fx1\":0,\"fy1\":0,\"fx2\":450,\"fy2\":600,\"look\":\"natural\""#)
+
+        let result = try await scan()
+
+        XCTAssertEqual(result.size, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.centerX, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.35, accuracy: 0.0001)
+    }
+
     func testBigSubjectUsesTheWholeView() async throws {
         StubProtocol.body = answer(x1: 0, y1: 0, x2: 900, y2: 1200)
 
@@ -196,7 +219,7 @@ final class ClaudeScannerTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2026-10-21")
         XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-beta"), "server-side-fallback-2026-07-01")
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody)) as? [String: Any])
-        XCTAssertEqual(body["model"] as? String, "claude-opus-5-5")
+        XCTAssertEqual(body["model"] as? String, "claude-sonnet-5-5")
         XCTAssertEqual(body["fallbacks"] as? String, "default")
         XCTAssertEqual((body["output_config"] as? [String: Any])?["effort"] as? String, "low")
         XCTAssertNil(body["thinking"])

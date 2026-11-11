@@ -58,6 +58,7 @@ struct ContentView: View {
                 DevelopView(
                     photo: photo,
                     ratio: ratio,
+                    suggestedLook: motion.target?.look,
                     onSaved: { thumbnail in
                         withAnimation(.snappy(duration: 0.25)) { lastPhoto = thumbnail }
                         saves += 1

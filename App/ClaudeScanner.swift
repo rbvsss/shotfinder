@@ -30,6 +30,8 @@ struct ScanResult {
     let size: Double
     /// The subject itself, as fractions of the image, for following it in the live picture.
     var subject: CGRect?
+    /// The colour look Claude suggests for this shot.
+    var look: Look?
 }
 
 enum ScanError: LocalizedError {
@@ -62,42 +64,53 @@ enum ClaudeScanner {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private static let systemPrompt = """
-    You are a professional photographer scouting a scene through the ultra-wide view of a phone. Pick \
-    the one subject a pro would walk over to and shoot. The app zooms in and frames it for the \
-    photographer.
+    You are a professional photographer scouting a scene through the ultra-wide view of a phone. Find \
+    the one shot a pro would walk over and take, and frame it. The app zooms in and guides the \
+    photographer to your frame.
 
-    How a professional picks:
-    - Pull: the thing the eye goes to first. Strong colour against a quiet background, a bright or \
-    well-lit shape, bold graphics or lettering, a rich texture, or a person doing something.
+    Pick the subject:
+    - Pull: what the eye goes to first. Strong colour against a quiet background, a pool of light, bold \
+    graphics or lettering, a rich texture, a striking shape.
     - People first: anyone other than the photographer, with their face, hands or what they are doing, \
-    is almost always the shot, even when they are only partly in view at the edge.
-    - Simplicity: one thing that reads clearly on its own, ideally with a clean background. Not a row, a \
-    group or a whole room.
-    - Clarity: big enough to stay sharp when zoomed and well lit.
-    - Consistency: the obvious best subject, not a clever one, so the same scene always gets the same \
-    answer.
+    is almost always the shot.
+    - One thing that reads clearly on its own, big enough to stay sharp when zoomed. Not a row, a group \
+    or a whole room.
+    - The obvious best subject, not a clever one, so the same scene always gets the same answer.
+    - Never the photographer's own hands, arms, knees or feet. Never an empty wall, ceiling or floor, or \
+    fittings nobody photographs: vents, sockets, cables, switches, radiators, bins, plain ceiling \
+    lights.
 
-    Never pick:
-    - The photographer: hands, arms, knees or feet reaching in close to the lens from the bottom or \
-    sides, even on a mouse or keyboard.
-    - Empty surfaces: a plain ceiling, wall or floor.
-    - Fittings nobody photographs: projectors, plain ceiling lights, vents, air conditioners, sockets, plugs, \
-    cables, switches, radiators or bins.
+    Compose the frame, an upright 3:4 crop of this image, the way a film still is composed:
+    - Go in close. The subject fills about two thirds of the frame's width or height: enough room to \
+    breathe, never lost in its surroundings.
+    - Place it with intent: on a third with space in the direction it faces or moves, or dead centre \
+    when the scene is symmetrical.
+    - Keep what adds to the picture, such as light falling on it, a leading line, a foreground edge or a \
+    reflection. Leave out clutter, bright distractions and anything cut off awkwardly at the frame edge.
+    - The whole subject is inside the frame, and the frame stays inside the image.
 
     Return:
     - label: the subject in 2 or 3 plain lowercase words, the way you would say it out loud, such as \
-    "red neon sign", "woman reading" or "woven ceiling lamp". Leave out materials and details that \
-    aren't needed to tell it apart.
-    - tip: two short instructions joined by a comma, 4 to 7 words in all, ending in a full stop, saying \
-    how to shoot it with only the phone. Plain words, no poetry. Examples: "Isolate the lamp, go \
-    tighter." "Fill the frame, keep it sharp." "Get low, catch the window light."
+    "red neon sign" or "woman reading".
+    - tip: the one thing that makes this exact shot better, which the app cannot do itself. The app \
+    already aims and zooms, so never say to step back, move closer, zoom or centre. Choose whatever \
+    matters most here: a moment to wait for, where to tap to focus or expose, an angle, a line to keep \
+    straight, a reflection or shadow to include. Name the actual thing in the scene. Do not suggest \
+    crouching unless the subject is on the ground. Two short instructions joined by a comma, 4 to 7 \
+    words in all, ending in a full stop.
     - x1, y1, x2, y2: the subject's tight bounding box in pixels of this image, where 0,0 is the top \
-    left corner. Include all of the subject and nothing else.
+    left corner.
+    - fx1, fy1, fx2, fy2: the frame, in the same pixels.
+    - look: the colour that suits this shot. "natural" is true colour. "kiln" is warm, soft and honeyed, \
+    for people and warm light. "fjord" is cool, airy and pastel, for daylight, water and greenery. \
+    "cinder" is dark and dense with teal shadows, for night, neon and moody rooms. "salt" is pale, \
+    bright and chalky, for minimal high-key scenes. "graphite" is black and white, for strong shapes, \
+    shadows and silhouettes.
     """
 
     /// The longest zoom a shot can ask for, where the telephoto still gives a clean picture.
     private static let longestZoom = 4.0
-    /// How much of the frame's width or height the subject fills, leaving room around it.
+    /// How much of the frame the subject fills when Claude gives no frame of its own.
     private static let subjectFill = 0.9
 
     private static let schema: [String: Any] = [
@@ -108,9 +121,14 @@ enum ClaudeScanner {
             "x1": ["type": "number"],
             "y1": ["type": "number"],
             "x2": ["type": "number"],
-            "y2": ["type": "number"]
+            "y2": ["type": "number"],
+            "fx1": ["type": "number"],
+            "fy1": ["type": "number"],
+            "fx2": ["type": "number"],
+            "fy2": ["type": "number"],
+            "look": ["type": "string", "enum": Look.allCases.map(\.rawValue)]
         ],
-        "required": ["label", "tip", "x1", "y1", "x2", "y2"],
+        "required": ["label", "tip", "x1", "y1", "x2", "y2", "fx1", "fy1", "fx2", "fy2", "look"],
         "additionalProperties": false
     ]
 
@@ -118,7 +136,7 @@ enum ClaudeScanner {
         let crop = ratio.cropInViewfinder
         let request = "This image is \(frame.width)x\(frame.height) pixels."
         let body: [String: Any] = [
-            "model": "claude-opus-5-5",
+            "model": "claude-sonnet-5-5",
             "max_tokens": 6000,
             "fallbacks": "default",
             "output_config": [
@@ -190,9 +208,15 @@ enum ClaudeScanner {
         let y1: Double
         let x2: Double
         let y2: Double
+        let fx1: Double?
+        let fy1: Double?
+        let fx2: Double?
+        let fy2: Double?
+        let look: String?
 
-        /// Frames the subject at the zoom that holds it with room around it, kept inside the image.
-        func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
+        /// A box in the image's pixels as fractions of the viewfinder. Nil when it is empty.
+        /// The image was sent upright, so an answer from a sideways phone is turned back.
+        private static func viewBox(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double, in frame: ScanFrame) -> CGRect? {
             let width = Double(frame.width)
             let height = Double(frame.height)
             let left = min(max(x1, 0), width)
@@ -200,30 +224,40 @@ enum ClaudeScanner {
             let top = min(max(y1, 0), height)
             let bottom = min(max(y2, 0), height)
             guard right > left, bottom > top else { return nil }
+            return frame.viewBox(CGRect(x: left / width, y: top / height, width: (right - left) / width, height: (bottom - top) / height))
+        }
 
-            // The image was sent upright, so an answer from a sideways phone is turned back to the viewfinder.
-            let subject = frame.viewBox(CGRect(
-                x: left / width,
-                y: top / height,
-                width: (right - left) / width,
-                height: (bottom - top) / height
-            ))
+        /// The zoom and place of Claude's frame, never tighter than the subject and kept inside the image.
+        func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
+            guard let subject = Self.viewBox(x1, y1, x2, y2, in: frame) else { return nil }
+            let cropWidth = Double(crop.width)
+            let cropHeight = Double(crop.height)
+            let subjectShare = max(Double(subject.width) / cropWidth, Double(subject.height) / cropHeight)
 
-            // The share of the widest frame the shot needs, and the zoom that gives exactly that.
-            let needed = max(Double(subject.width) / Double(crop.width), Double(subject.height) / Double(crop.height)) / ClaudeScanner.subjectFill
+            // The share of the widest view the shot needs, and where its middle is.
+            var needed = subjectShare / ClaudeScanner.subjectFill
+            var middle = CGPoint(x: subject.midX, y: subject.midY)
+            if let fx1, let fy1, let fx2, let fy2, let composed = Self.viewBox(fx1, fy1, fx2, fy2, in: frame) {
+                needed = max(Double(composed.width) / cropWidth, Double(composed.height) / cropHeight, subjectShare)
+                middle = CGPoint(x: composed.midX, y: composed.midY)
+            }
             // Rounded to a tenth, as the zoom row shows it.
             let exact = (scanLens / needed * 10).rounded() / 10
             let zoom = min(max(exact, scanLens), ClaudeScanner.longestZoom)
             let scale = min(scanLens / zoom, 1)
             let halfWidth = scale * Double(crop.width) / 2
             let halfHeight = scale * Double(crop.height) / 2
+            // Slide the frame so the whole subject is inside it, then keep it inside the image.
+            let centerX = min(max(Double(middle.x), Double(subject.maxX) - halfWidth), Double(subject.minX) + halfWidth)
+            let centerY = min(max(Double(middle.y), Double(subject.maxY) - halfHeight), Double(subject.minY) + halfHeight)
             return ScanResult(
                 label: label,
                 tip: tip,
-                centerX: min(max(Double(subject.midX), halfWidth), 1 - halfWidth),
-                centerY: min(max(Double(subject.midY), halfHeight), 1 - halfHeight),
+                centerX: min(max(centerX, halfWidth), 1 - halfWidth),
+                centerY: min(max(centerY, halfHeight), 1 - halfHeight),
                 size: scale * Double(crop.width),
-                subject: subject
+                subject: subject,
+                look: look.flatMap(Look.init(rawValue:))
             )
         }
     }

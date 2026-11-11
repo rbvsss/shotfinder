@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// The screen after the shot: choose a look, grain and frame, then save.
+/// The screen after the shot: choose a look, adjust it, add grain or a frame, then save.
 struct DevelopView: View {
     let photo: CapturedPhoto
     let ratio: CaptureRatio
+    /// The look the scan picked for this shot. It opens with that look on.
+    let suggestedLook: Look?
     let onSaved: (_ thumbnail: UIImage?) -> Void
     let onDiscard: () -> Void
 
@@ -23,6 +25,17 @@ struct DevelopView: View {
     @State private var confirmingDiscard = false
     @State private var pendingRender: DevelopSettings?
     @State private var isRendering = false
+    @State private var tab = Panel.looks
+    @State private var adjustment = Adjustment.exposure
+
+    private enum Panel: String, CaseIterable {
+        case looks, adjust, finish
+
+        var title: String { rawValue.capitalized }
+    }
+
+    /// The same height for every tab, so the photo doesn't jump when switching.
+    private static let panelHeight: CGFloat = 104
 
     var body: some View {
         VStack(spacing: 14) {
@@ -38,20 +51,16 @@ struct DevelopView: View {
                     .padding(.horizontal, 16)
             }
 
-            lookPicker
+            tabBar
 
-            HStack(spacing: 10) {
-                optionButton(settings.grain.title, isOn: settings.grain != .off) {
-                    settings.grain = settings.grain.next
+            Group {
+                switch tab {
+                case .looks: lookPicker
+                case .adjust: adjustPanel
+                case .finish: finishPanel
                 }
-                .accessibilityLabel("Grain, \(settings.grain.title)")
-
-                optionButton(settings.frame.title, isOn: settings.frame != .none) {
-                    settings.frame = settings.frame.next
-                }
-                .accessibilityLabel("Frame, \(settings.frame.title)")
             }
-            .padding(.horizontal, 16)
+            .frame(height: Self.panelHeight)
 
             actions
                 .padding(.horizontal, 16)
@@ -127,13 +136,13 @@ struct DevelopView: View {
                             .overlay {
                                 if settings.look == look {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .strokeBorder(Color.white, lineWidth: 2)
+                                        .strokeBorder(Theme.accent, lineWidth: 2)
                                 }
                             }
 
                             Text(look.title)
                                 .font(.caption)
-                                .foregroundStyle(settings.look == look ? .primary : .secondary)
+                                .foregroundStyle(settings.look == look ? Theme.accent : Color.secondary)
                         }
                     }
                     .buttonStyle(.plain)
@@ -145,13 +154,95 @@ struct DevelopView: View {
         }
     }
 
+    private var tabBar: some View {
+        HStack(spacing: 2) {
+            ForEach(Panel.allCases, id: \.self) { item in
+                Button {
+                    tab = item
+                } label: {
+                    Text(item.title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(tab == item ? .primary : .secondary)
+                        .padding(.horizontal, 18)
+                        .frame(height: 34)
+                        .background(tab == item ? Theme.control : Color.clear, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(tab == item ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Theme.control.opacity(0.5), in: Capsule())
+    }
+
+    /// One slider at a time: pick what to change, then drag.
+    private var adjustPanel: some View {
+        VStack(spacing: 14) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Adjustment.allCases) { item in
+                        let isChanged = settings.adjust[keyPath: item.keyPath] != 0
+                        Button {
+                            adjustment = item
+                        } label: {
+                            Text(item.title)
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(adjustment == item ? Color.black : isChanged ? Theme.accent : Color.white.opacity(0.7))
+                                .padding(.horizontal, 14)
+                                .frame(height: 32)
+                                .background(adjustment == item ? Theme.accent : Theme.control, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(adjustment == item ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+
+            HStack(spacing: 12) {
+                Slider(value: $settings.adjust[dynamicMember: adjustment.keyPath], in: adjustment.range)
+                    .accessibilityLabel(adjustment.title)
+
+                // Tap the number to put it back to zero.
+                Button {
+                    settings.adjust[keyPath: adjustment.keyPath] = 0
+                } label: {
+                    Text("\(Int((settings.adjust[keyPath: adjustment.keyPath] * 100).rounded()))")
+                        .font(.footnote.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, height: 32)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Reset \(adjustment.title)")
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private var finishPanel: some View {
+        HStack(spacing: 10) {
+            optionButton(settings.grain.title, isOn: settings.grain != .off) {
+                settings.grain = settings.grain.next
+            }
+            .accessibilityLabel("Grain, \(settings.grain.title)")
+
+            optionButton(settings.frame.title, isOn: settings.frame != .none) {
+                settings.frame = settings.frame.next
+            }
+            .accessibilityLabel("Frame, \(settings.frame.title)")
+        }
+        .padding(.horizontal, 16)
+    }
+
     private func optionButton(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline)
-                .foregroundStyle(isOn ? .primary : .secondary)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
+                .foregroundStyle(isOn ? Theme.accent : Color.white.opacity(0.7))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(Theme.control, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(PressStyle())
     }
@@ -181,7 +272,7 @@ struct DevelopView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.white)
+            .tint(Theme.accent)
             .disabled(developer == nil)
         }
         .controlSize(.large)
@@ -191,7 +282,7 @@ struct DevelopView: View {
 
     private func loadSettings() {
         settings = DevelopSettings(
-            look: Look(rawValue: savedLook) ?? .natural,
+            look: suggestedLook ?? Look(rawValue: savedLook) ?? .natural,
             grain: GrainLevel(rawValue: savedGrain) ?? .off,
             frame: PhotoFrame(rawValue: savedFrame) ?? .none
         )
@@ -252,6 +343,7 @@ struct DevelopView: View {
         var plain = settings
         plain.look = .natural
         plain.grain = .off
+        plain.adjust = Adjustments()
         Task {
             original = await Task.detached(priority: .userInitiated) {
                 developer.renderPreview(plain)

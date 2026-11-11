@@ -145,6 +145,12 @@ final class FlowTests: XCTestCase {
         sleep(1)
         shoot("e2e-13-cinder")
 
+        app.buttons["Adjust"].tap()
+        app.buttons["Vignette"].tap()
+        app.sliders["Vignette"].adjust(toNormalizedSliderPosition: 0.8)
+        shoot("e2e-13b-adjust")
+
+        app.buttons["Finish"].tap()
         app.buttons["Grain, No Grain"].tap()
         XCTAssertTrue(app.buttons["Grain, Fine Grain"].waitForExistence(timeout: 3))
         sleep(1)

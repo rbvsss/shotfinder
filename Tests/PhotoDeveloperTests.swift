@@ -119,6 +119,26 @@ final class PhotoDeveloperTests: XCTestCase {
         }
     }
 
+    func testAdjustmentsChangeThePhotoTheWayTheirNamesSay() throws {
+        let ready = try developer()
+        let plain = try averageColor(XCTUnwrap(ready.renderPreview(DevelopSettings())))
+
+        var brighter = DevelopSettings()
+        brighter.adjust.exposure = 1
+        XCTAssertGreaterThan(try averageColor(XCTUnwrap(ready.renderPreview(brighter)))[1], plain[1])
+
+        var warmer = DevelopSettings()
+        warmer.adjust.warmth = 1
+        let warm = try averageColor(XCTUnwrap(ready.renderPreview(warmer)))
+        XCTAssertGreaterThan(Int(warm[0]) - Int(warm[2]), Int(plain[0]) - Int(plain[2]))
+
+        var shaded = DevelopSettings()
+        shaded.adjust.vignette = 1
+        let dark = try XCTUnwrap(ready.renderPreview(shaded))
+        XCTAssertEqual(dark.size, try XCTUnwrap(ready.renderPreview(DevelopSettings())).size)
+        XCTAssertLessThan(try averageColor(dark)[1], plain[1])
+    }
+
     func testFramesAddTheirMargins() throws {
         let ready = try developer()
         let plain = try XCTUnwrap(ready.renderPreview(DevelopSettings()))

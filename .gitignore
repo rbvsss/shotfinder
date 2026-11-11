@@ -4,3 +4,5 @@ build/
 Payload/
 *.ipa
 .DS_Store
+bench/runs/
+__pycache__/

@@ -15,12 +15,15 @@ struct ScanTarget {
     /// Direction and size of the subject itself, which the camera follows in the live picture.
     let subjectRay: SIMD3<Double>
     let subjectSize: CGSize
+    /// The colour look suggested for this shot.
+    let look: Look?
 
     init(result: ScanResult, optics: CameraOptics, scanZoomFactor: Double, scanLens: Double, ratio: CaptureRatio) {
         let centerX = min(max(result.centerX, 0), 1)
         let centerY = min(max(result.centerY, 0), 1)
         let scale = min(max(result.size / Double(ratio.cropInViewfinder.width), 0.1), 1)
         label = result.label.lowercased()
+        look = result.look
         tip = result.tip
         self.scale = scale
         self.scanZoomFactor = scanZoomFactor
