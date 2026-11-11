@@ -6,6 +6,18 @@ struct ScanFrame {
     let width: Int
     let height: Int
     let zoomFactor: Double
+    /// Quarter turns clockwise the phone was held at. The image is sent turned upright to match.
+    var quarterTurns = 0
+
+    /// Takes a box given as fractions of the upright image back to fractions of the viewfinder.
+    func viewBox(_ box: CGRect) -> CGRect {
+        switch ((quarterTurns % 4) + 4) % 4 {
+        case 1: return CGRect(x: box.minY, y: 1 - box.maxX, width: box.height, height: box.width)
+        case 2: return CGRect(x: 1 - box.maxX, y: 1 - box.maxY, width: box.width, height: box.height)
+        case 3: return CGRect(x: 1 - box.maxY, y: box.minX, width: box.height, height: box.width)
+        default: return box
+        }
+    }
 }
 
 /// The shot Claude picked. Coordinates are fractions of the image, measured from the top left.
@@ -189,8 +201,16 @@ enum ClaudeScanner {
             let bottom = min(max(y2, 0), height)
             guard right > left, bottom > top else { return nil }
 
+            // The image was sent upright, so an answer from a sideways phone is turned back to the viewfinder.
+            let subject = frame.viewBox(CGRect(
+                x: left / width,
+                y: top / height,
+                width: (right - left) / width,
+                height: (bottom - top) / height
+            ))
+
             // The share of the widest frame the shot needs, and the zoom that gives exactly that.
-            let needed = max((right - left) / width / Double(crop.width), (bottom - top) / height / Double(crop.height)) / ClaudeScanner.subjectFill
+            let needed = max(Double(subject.width) / Double(crop.width), Double(subject.height) / Double(crop.height)) / ClaudeScanner.subjectFill
             // Rounded to a tenth, as the zoom row shows it.
             let exact = (scanLens / needed * 10).rounded() / 10
             let zoom = min(max(exact, scanLens), ClaudeScanner.longestZoom)
@@ -200,10 +220,10 @@ enum ClaudeScanner {
             return ScanResult(
                 label: label,
                 tip: tip,
-                centerX: min(max((left + right) / 2 / width, halfWidth), 1 - halfWidth),
-                centerY: min(max((top + bottom) / 2 / height, halfHeight), 1 - halfHeight),
+                centerX: min(max(Double(subject.midX), halfWidth), 1 - halfWidth),
+                centerY: min(max(Double(subject.midY), halfHeight), 1 - halfHeight),
                 size: scale * Double(crop.width),
-                subject: CGRect(x: left / width, y: top / height, width: (right - left) / width, height: (bottom - top) / height)
+                subject: subject
             )
         }
     }

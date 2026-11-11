@@ -139,11 +139,6 @@ final class MotionTracker {
         return CGFloat((90 + turns * 90 + 360) % 360)
     }
 
-    /// Scans are judged as portrait images, so a sideways phone would mislead them.
-    var isHeldForScan: Bool {
-        lock.withLock { live.isFlat || abs(live.roll) < .pi / 4 }
-    }
-
     private func update(with motion: CMDeviceMotion) {
         let gravity = motion.gravity
         let rate = SIMD3(motion.rotationRate.x, motion.rotationRate.y, motion.rotationRate.z)

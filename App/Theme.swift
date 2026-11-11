@@ -9,8 +9,8 @@ enum Theme {
     static let control = Color.white.opacity(0.14)
     /// The yellow for the guide, and whatever is on or selected in the top bar and its menus.
     static let accent = Color(red: 0.969, green: 0.847, blue: 0.286)
-    /// The background of the shot's name, which still shows against a black scene.
-    static let pill = Color(white: 0.08).opacity(0.6)
+    /// A dark tint over the blurred scene behind the shot's name, so white text reads on a bright scene.
+    static let pill = Color.black.opacity(0.25)
     static let quick = Animation.easeOut(duration: 0.18)
 }
 

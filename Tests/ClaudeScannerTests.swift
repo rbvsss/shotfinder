@@ -1,3 +1,5 @@
+import CoreImage
+import UIKit
 import XCTest
 @testable import ShotFinder
 
@@ -86,6 +88,75 @@ final class ClaudeScannerTests: XCTestCase {
         XCTAssertEqual(result.centerX, 0.4, accuracy: 0.0001)
         XCTAssertEqual(result.centerY, 0.55, accuracy: 0.0001)
         XCTAssertEqual(result.size, 0.2, accuracy: 0.0001)
+    }
+
+    func testSidewaysScanIsSentUprightAndMappedBack() throws {
+        // A white patch near the top right of a portrait viewfinder, 30 by 40 pixels.
+        let size = CGSize(width: 30, height: 40)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let drawn = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 18, y: 4, width: 9, height: 8))
+        }
+        let source = CIImage(cgImage: try XCTUnwrap(drawn.cgImage))
+
+        for turns in [-1, 0, 1, 2] {
+            let upright = CameraController.upright(source, quarterTurns: turns)
+            let image = try XCTUnwrap(CIContext().createCGImage(upright, from: upright.extent))
+            let found = try XCTUnwrap(whiteBox(in: image), "turns \(turns)")
+            let frame = ScanFrame(jpeg: Data(), width: image.width, height: image.height, zoomFactor: 1, quarterTurns: turns)
+
+            let back = frame.viewBox(found)
+            XCTAssertEqual(back.minX, 0.6, accuracy: 0.01, "turns \(turns)")
+            XCTAssertEqual(back.minY, 0.1, accuracy: 0.01, "turns \(turns)")
+            XCTAssertEqual(back.width, 0.3, accuracy: 0.01, "turns \(turns)")
+            XCTAssertEqual(back.height, 0.2, accuracy: 0.01, "turns \(turns)")
+
+            if turns == -1 {
+                // Turned anticlockwise, the right of the viewfinder is the top of the scene.
+                XCTAssertEqual(image.width, 40)
+                XCTAssertLessThan(found.midY, 0.5)
+                XCTAssertLessThan(found.midX, 0.5)
+            }
+        }
+    }
+
+    /// The white area of an image, as fractions measured from its top left.
+    private func whiteBox(in image: CGImage) -> CGRect? {
+        let width = image.width
+        let height = image.height
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = context.data else { return nil }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where pixels[(y * width + x) * 4] > 128 {
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+                minY = min(minY, y)
+                maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= 0 else { return nil }
+        return CGRect(
+            x: Double(minX) / Double(width),
+            y: Double(minY) / Double(height),
+            width: Double(maxX - minX + 1) / Double(width),
+            height: Double(maxY - minY + 1) / Double(height)
+        )
     }
 
     func testBigSubjectUsesTheWholeView() async throws {

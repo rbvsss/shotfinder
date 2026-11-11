@@ -67,6 +67,7 @@ final class CameraController: NSObject {
     @ObservationIgnored private var isLowLight = false
     @ObservationIgnored private var pendingFrame: CheckedContinuation<ScanFrame, Error>?
     @ObservationIgnored private var onPendingFrame: (() -> Void)?
+    @ObservationIgnored private var pendingTurns = 0
     @ObservationIgnored private var frameRequest = 0
     @ObservationIgnored private var wantsPlaceholder = false
     @ObservationIgnored private var processedData: Data?
@@ -454,7 +455,8 @@ final class CameraController: NSObject {
 
     /// Returns the next video frame as a portrait JPEG small enough to send for scanning.
     /// `onFrame` runs at the moment the frame arrives, before the slower encoding work.
-    func captureScanFrame(onFrame: @escaping () -> Void) async throws -> ScanFrame {
+    /// `quarterTurns` is how the phone is held, so the frame can be sent the right way up.
+    func captureScanFrame(quarterTurns: Int, onFrame: @escaping () -> Void) async throws -> ScanFrame {
         #if DEBUG
         if isStaged {
             onFrame()
@@ -468,6 +470,7 @@ final class CameraController: NSObject {
                     self.frameRequest += 1
                     self.pendingFrame = continuation
                     self.onPendingFrame = onFrame
+                    self.pendingTurns = quarterTurns
                     let request = self.frameRequest
                     self.videoQueue.asyncAfter(deadline: .now() + Self.frameTimeout) {
                         if request == self.frameRequest {
@@ -480,6 +483,16 @@ final class CameraController: NSObject {
             videoQueue.async {
                 self.failPendingFrame(with: CancellationError())
             }
+        }
+    }
+
+    /// Turns a viewfinder image so the scene is the right way up when the phone is held sideways or upside down.
+    static func upright(_ image: CIImage, quarterTurns: Int) -> CIImage {
+        switch ((quarterTurns % 4) + 4) % 4 {
+        case 1: return image.oriented(.right)
+        case 2: return image.oriented(.down)
+        case 3: return image.oriented(.left)
+        default: return image
         }
     }
 
@@ -592,7 +605,8 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         }
 
         let zoomFactor = Double(device?.videoZoomFactor ?? 1)
-        let image = CIImage(cvPixelBuffer: pixels)
+        let turned = Self.upright(CIImage(cvPixelBuffer: pixels), quarterTurns: pendingTurns)
+        let image = turned.transformed(by: CGAffineTransform(translationX: -turned.extent.minX, y: -turned.extent.minY))
         let scale = min(1, Self.scanLongEdge / max(image.extent.width, image.extent.height))
         let width = (image.extent.width * scale).rounded()
         let height = (image.extent.height * scale).rounded()
@@ -602,7 +616,13 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         ))
         let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.8]
         if let jpeg = Self.imageContext.jpegRepresentation(of: scaled, colorSpace: colorSpace, options: options) {
-            continuation.resume(returning: ScanFrame(jpeg: jpeg, width: Int(width), height: Int(height), zoomFactor: zoomFactor))
+            continuation.resume(returning: ScanFrame(
+                jpeg: jpeg,
+                width: Int(width),
+                height: Int(height),
+                zoomFactor: zoomFactor,
+                quarterTurns: pendingTurns
+            ))
         } else {
             continuation.resume(throwing: ScanError.badResponse)
         }

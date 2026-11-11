@@ -180,6 +180,7 @@ struct GuideOverlay: View {
         .padding(.trailing, 14)
         .frame(height: 30)
         .background(Theme.pill, in: Capsule())
+        .background(.ultraThinMaterial, in: Capsule())
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 

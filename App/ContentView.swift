@@ -455,11 +455,11 @@ struct ContentView: View {
         Button(action: scanButtonTapped) {
             Image(systemName: scanSymbol)
                 .font(.title3.weight(.medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(isReady ? Theme.accent : Color.white)
                 .contentTransition(.symbolEffect(.replace))
                 .rotationEffect(.degrees(iconAngle))
                 .frame(width: 52, height: 52)
-                .background(Theme.control, in: Circle())
+                .background(isReady ? Theme.accent.opacity(0.18) : Theme.control, in: Circle())
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel(scanLabel)
@@ -467,6 +467,10 @@ struct ContentView: View {
 
     private var isIdle: Bool {
         !isScanning && motion.target == nil
+    }
+
+    private var isReady: Bool {
+        !isIdle && motion.guide.isAligned
     }
 
     private var scanSymbol: String {
@@ -612,10 +616,6 @@ struct ContentView: View {
     }
 
     private func startScan() {
-        guard motion.isHeldForScan else {
-            message = "Hold your iPhone upright to scan."
-            return
-        }
         guard let apiKey = KeyStore.load() else {
             showingSettings = true
             return
@@ -627,12 +627,14 @@ struct ContentView: View {
             zoomBeforeScan = camera.zoomDisplay
         }
         let scanRatio = ratio
+        // However the phone is held, the scan sees the scene the right way up.
+        let turns = motion.quarterTurns
         camera.zoom(to: camera.lenses.first ?? 1, animated: false)
 
         scanTask = Task {
             do {
                 try await Task.sleep(nanoseconds: Self.lensSettleDelay)
-                let frame = try await camera.captureScanFrame { [motion] in motion.mark() }
+                let frame = try await camera.captureScanFrame(quarterTurns: turns) { [motion] in motion.mark() }
                 let scanLens = camera.displayZoom(forFactor: frame.zoomFactor)
                 let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, scanLens: scanLens, apiKey: apiKey)
                 try Task.checkCancellation()
@@ -693,7 +695,7 @@ private struct HintView: View {
             } else if let target = motion.target {
                 Text(motion.guide.isBehind ? "Behind you" : target.tip)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.75))
             } else if showsFirstHint {
                 Text("Tap \(Image(systemName: "viewfinder")) to scan for a shot")
                     .font(.footnote)
