@@ -19,7 +19,7 @@ struct LiveGuide: View {
     }
 }
 
-/// The box around the shot, a dashed line to it from a crosshair fixed mid-view, the level, and the shot's name.
+/// A spotlight and box on the shot, a dashed line to it from a crosshair fixed mid-view, the level, and the shot's name.
 struct GuideOverlay: View {
     let roll: Double
     let showsLevel: Bool
@@ -37,6 +37,11 @@ struct GuideOverlay: View {
     private static let lineWidth: CGFloat = 2.7
     /// Where the arrows sit along the line, from the box towards the crosshair.
     private static let arrowPositions: [CGFloat] = [0.38, 0.65]
+    /// How dark the scene goes away from the shot.
+    private static let spotlightDim = 0.45
+    /// How far past the box the light reaches before it starts to fade, and how soft the fade is.
+    private static let spotlightSpread: CGFloat = 22
+    private static let spotlightSoftness: CGFloat = 34
 
     var body: some View {
         GeometryReader { geometry in
@@ -44,6 +49,8 @@ struct GuideOverlay: View {
 
             ZStack {
                 if let projection, !isAligned {
+                    spotlight(on: projection, in: size)
+
                     dashedLine(from: projection, in: size)
 
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -72,6 +79,26 @@ struct GuideOverlay: View {
         }
         .clipped()
         .allowsHitTesting(false)
+    }
+
+    /// Darkens the scene around the shot with a soft edge, so the shot is the brightest thing in view.
+    private func spotlight(on projection: GuideProjection, in size: CGSize) -> some View {
+        ZStack {
+            Color.black.opacity(Self.spotlightDim)
+
+            RoundedRectangle(cornerRadius: 10 + Self.spotlightSpread, style: .continuous)
+                .frame(
+                    width: projection.width * size.width + Self.spotlightSpread * 2,
+                    height: projection.height * size.height + Self.spotlightSpread * 2
+                )
+                .position(
+                    x: min(max(projection.x, -Self.lineReach), Self.lineReach) * size.width,
+                    y: min(max(projection.y, -Self.lineReach), Self.lineReach) * size.height
+                )
+                .blur(radius: Self.spotlightSoftness)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
     }
 
     @ViewBuilder

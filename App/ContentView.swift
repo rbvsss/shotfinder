@@ -714,7 +714,7 @@ private struct LensRow: View {
     private static let matchTolerance = 0.03
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 4) {
             ForEach(camera.lenses, id: \.self) { lens in
                 let isActive = lens == activeLens
                 Button {
@@ -722,14 +722,18 @@ private struct LensRow: View {
                     camera.zoom(to: lens)
                 } label: {
                     Text(label(isActive ? camera.zoomDisplay : lens))
-                        .font(.subheadline.weight(isActive ? .semibold : .regular))
+                        .font(.footnote.weight(isActive ? .semibold : .medium))
                         .monospacedDigit()
-                        .foregroundStyle(isActive ? .primary : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .foregroundStyle(isActive ? Theme.accent : Color.white.opacity(0.6))
                         .rotationEffect(.degrees(iconAngle))
+                        .frame(width: 40, height: 40)
+                        .background(isActive ? Theme.accent.opacity(0.18) : Theme.control.opacity(0.7), in: Circle())
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle())
                 .accessibilityLabel("Zoom \(label(lens))")
             }
         }

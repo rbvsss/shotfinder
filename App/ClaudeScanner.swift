@@ -67,15 +67,16 @@ enum ClaudeScanner {
     - The photographer: hands, arms, knees or feet reaching in close to the lens from the bottom or \
     sides, even on a mouse or keyboard.
     - Empty surfaces: a plain ceiling, wall or floor.
-    - Fittings nobody photographs: projectors, ceiling lights, vents, air conditioners, sockets, plugs, \
+    - Fittings nobody photographs: projectors, plain ceiling lights, vents, air conditioners, sockets, plugs, \
     cables, switches, radiators or bins.
 
     Return:
-    - label: the subject in 2 to 4 specific lowercase words, such as "red neon sign", "woman reading" \
-    or "potted fern".
-    - tip: one short sentence under 10 words, ending in a full stop, saying how to shoot it with only \
-    the phone, the way a photographer would. Examples: "Isolate the lamp, keep the shade glowing." "Keep \
-    the mug sharp against the window."
+    - label: the subject in 2 or 3 plain lowercase words, the way you would say it out loud, such as \
+    "red neon sign", "woman reading" or "woven ceiling lamp". Leave out materials and details that \
+    aren't needed to tell it apart.
+    - tip: two short instructions joined by a comma, 4 to 7 words in all, ending in a full stop, saying \
+    how to shoot it with only the phone. Plain words, no poetry. Examples: "Isolate the lamp, go \
+    tighter." "Fill the frame, keep it sharp." "Get low, catch the window light."
     - x1, y1, x2, y2: the subject's tight bounding box in pixels of this image, where 0,0 is the top \
     left corner. Include all of the subject and nothing else.
     """
