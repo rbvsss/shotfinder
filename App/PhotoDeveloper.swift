@@ -4,6 +4,28 @@ import ImageIO
 import Photos
 import UIKit
 
+/// The app's own colour: a little richer, deeper and warmer than the camera gives, in the viewfinder and in every photo.
+enum BaseTone {
+    static let saturation = 1.18
+    static let contrast = 1.08
+    /// What red, green and blue are each multiplied by.
+    static let warmth = (red: 1.0, green: 0.97, blue: 0.91)
+
+    /// Works on the values the screen shows, so a photo matches what the viewfinder showed.
+    static func apply(to image: CIImage) -> CIImage {
+        let controls = CIFilter.colorControls()
+        controls.inputImage = image.applyingFilter("CILinearToSRGBToneCurve")
+        controls.saturation = Float(saturation)
+        controls.contrast = Float(contrast)
+        let matrix = CIFilter.colorMatrix()
+        matrix.inputImage = controls.outputImage
+        matrix.rVector = CIVector(x: warmth.red, y: 0, z: 0, w: 0)
+        matrix.gVector = CIVector(x: 0, y: warmth.green, z: 0, w: 0)
+        matrix.bVector = CIVector(x: 0, y: 0, z: warmth.blue, w: 0)
+        return matrix.outputImage?.applyingFilter("CISRGBToneCurveToLinear").cropped(to: image.extent) ?? image
+    }
+}
+
 enum Look: String, CaseIterable, Identifiable {
     case natural, kiln, fjord, cinder, salt, graphite
 
@@ -199,7 +221,7 @@ final class PhotoDeveloper {
     func renderThumbnails() -> [Look: UIImage] {
         var result: [Look: UIImage] = [:]
         for look in Look.allCases {
-            result[look] = Self.image(from: look.apply(to: thumbnail))
+            result[look] = Self.image(from: look.apply(to: BaseTone.apply(to: thumbnail)))
         }
         return result
     }
@@ -241,7 +263,7 @@ final class PhotoDeveloper {
     }
 
     private static func develop(_ image: CIImage, _ settings: DevelopSettings) -> CIImage {
-        let toned = settings.look.apply(to: image)
+        let toned = settings.look.apply(to: BaseTone.apply(to: image))
         let grained = addGrain(to: toned, amount: settings.grain.amount)
         return settings.frame.apply(to: grained)
     }

@@ -82,7 +82,7 @@ final class CameraController: NSObject {
     private static let nightExposureLimit = CMTime(value: 1, timescale: 4)
     private static let nightBoost: Float = 0.5
     /// In low light the camera brightens a dark scene to grey. Holding it down keeps night looking like night.
-    private static let lowLightBias: Float = -0.7
+    private static let lowLightBias: Float = -0.4
     private static let lowLightStartISO: Float = 1600
     private static let lowLightEndISO: Float = 600
 

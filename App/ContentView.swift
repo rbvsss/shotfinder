@@ -186,27 +186,38 @@ struct ContentView: View {
                 message: message ?? camera.interruption,
                 showsFirstHint: !hasScanned
             )
-            // Short enough that the viewfinder keeps the full width of the screen.
-            .frame(minHeight: 40)
-            .padding(.top, 6)
+            // Kept small, so the camera gets every bit of room that is left.
+            .frame(minHeight: 36)
+            .padding(.top, 2)
             .padding(.horizontal, 20)
-
-            Spacer(minLength: 0)
 
             // Stays while guiding, so the zoom the shot needs shows as it is reached.
             LensRow(camera: camera, motion: motion, iconAngle: iconAngle)
             .padding(.horizontal, 32)
-            .padding(.bottom, 8)
+            .padding(.bottom, 4)
 
             controls
                 .padding(.horizontal, 32)
-                .padding(.bottom, 12)
+                .padding(.bottom, 6)
         }
     }
 
+    /// Takes all the room the controls leave. The 3:4 camera picture fills it, so a sliver at each side is out of view.
     private var viewfinder: some View {
+        Color.clear
+            .overlay {
+                viewfinderContent
+                    .aspectRatio(3.0 / 4.0, contentMode: .fill)
+            }
+            .clipped()
+    }
+
+    private var viewfinderContent: some View {
         ZStack {
             preview
+                .saturation(BaseTone.saturation)
+                .contrast(BaseTone.contrast)
+                .colorMultiply(Color(red: BaseTone.warmth.red, green: BaseTone.warmth.green, blue: BaseTone.warmth.blue))
                 .opacity(camera.isPreviewLive ? 1 : 0)
                 .animation(.easeOut(duration: 0.15), value: camera.isPreviewLive)
 
@@ -234,8 +245,6 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
         }
-        .aspectRatio(3.0 / 4.0, contentMode: .fit)
-        .clipped()
     }
 
     /// The ratio on the left; flash, camera options and settings on the right.
@@ -416,14 +425,14 @@ struct ContentView: View {
         ZStack {
             Circle()
                 .stroke(Color.white, lineWidth: 3)
-                .frame(width: 76, height: 76)
+                .frame(width: 68, height: 68)
             Circle()
                 .fill(Color.white)
-                .frame(width: 64, height: 64)
+                .frame(width: 57, height: 57)
                 .scaleEffect(shutterHeld ? 0.9 : 1)
                 .animation(Theme.quick, value: shutterHeld)
         }
-        .frame(width: 84, height: 84)
+        .frame(width: 72, height: 72)
         .contentShape(Circle())
         // Fires on touch down, so the moment you press is the moment you get.
         .gesture(
