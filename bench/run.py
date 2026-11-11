@@ -53,8 +53,9 @@ def frame_for(shot, width, height):
         needed = max((fr - fl) / width, (fb - ft) / height, (right - left) / width, (bottom - top) / height)
         mx, my = (fl + fr) / 2 / width, (ft + fb) / 2 / height
         # Slide the frame so the whole subject is inside it.
-        mx = min(max(mx, right / width - needed / 2), left / width + needed / 2)
-        my = min(max(my, bottom / height - needed / 2), top / height + needed / 2)
+        hold = lambda low, high, middle: (low + high) / 2 if high - low > needed else min(max(middle, high - needed / 2), low + needed / 2)
+        mx = hold(left / width, right / width, mx)
+        my = hold(top / height, bottom / height, my)
     else:
         needed = max((right - left) / width, (bottom - top) / height) / SUBJECT_FILL
         mx, my = (left + right) / 2 / width, (top + bottom) / 2 / height

@@ -1,6 +1,6 @@
 """Writes a bench prompt into App/ClaudeScanner.swift as the app's system prompt.
 
-    python to_swift.py prompts/v5-look.txt
+    python to_swift.py prompts/current.txt
 """
 import io, os, re, sys, textwrap
 

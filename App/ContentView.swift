@@ -465,11 +465,11 @@ struct ContentView: View {
         Button(action: scanButtonTapped) {
             Image(systemName: scanSymbol)
                 .font(.title3.weight(.medium))
-                .foregroundStyle(isReady ? Theme.accent : Color.white)
+                .foregroundStyle(scanIsLit ? Theme.accent : Color.white)
                 .contentTransition(.symbolEffect(.replace))
                 .rotationEffect(.degrees(iconAngle))
                 .frame(width: 52, height: 52)
-                .background(isReady ? Theme.accent.opacity(0.18) : Theme.control, in: Circle())
+                .background(scanIsLit ? Theme.accent.opacity(0.18) : Theme.control, in: Circle())
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel(scanLabel)
@@ -479,12 +479,13 @@ struct ContentView: View {
         !isScanning && motion.target == nil
     }
 
-    private var isReady: Bool {
-        !isIdle && motion.guide.isAligned
+    /// Yellow when a tap starts a scan: before the first one, and again once the shot is lined up.
+    private var scanIsLit: Bool {
+        isIdle || motion.guide.isAligned
     }
 
     private var scanSymbol: String {
-        if isIdle { return "viewfinder" }
+        if isIdle { return "sparkles" }
         return motion.guide.isAligned ? "arrow.clockwise" : "xmark"
     }
 
@@ -707,7 +708,7 @@ private struct HintView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.75))
             } else if showsFirstHint {
-                Text("Tap \(Image(systemName: "viewfinder")) to scan for a shot")
+                Text("Tap \(Image(systemName: "sparkles")) to scan for a shot")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

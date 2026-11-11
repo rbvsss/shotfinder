@@ -312,7 +312,7 @@ struct DevelopView: View {
         case .success(let ready):
             developer = ready
             requestRender()
-            thumbnails = await Task.detached(priority: .utility) { ready.renderThumbnails() }.value
+            thumbnails = await Task.detached(priority: .userInitiated) { ready.renderThumbnails() }.value
         case .failure(let error):
             message = error.localizedDescription
         }
