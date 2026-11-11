@@ -80,7 +80,8 @@ enum ClaudeScanner {
     fittings nobody photographs: vents, sockets, cables, switches, radiators, bins, plain ceiling \
     lights.
 
-    Compose the frame, an upright 3:4 crop of this image, the way a film still is composed:
+    Compose the frame, a crop of this image in the shape given with it, the way a film still is \
+    composed:
     - Go in close. The subject fills about two thirds of the frame's width or height: enough room to \
     breathe, never lost in its surroundings.
     - Place it with intent: on a third with space in the direction it faces or moves, or dead centre \
@@ -134,7 +135,10 @@ enum ClaudeScanner {
 
     static func scan(frame: ScanFrame, ratio: CaptureRatio, scanLens: Double, apiKey: String) async throws -> ScanResult {
         let crop = ratio.cropInViewfinder
-        let request = "This image is \(frame.width)x\(frame.height) pixels."
+        // The photo's shape in the scene: the chosen ratio, on its side when the phone is.
+        let sides = ratio.rawValue.split(separator: ":")
+        let shape = frame.quarterTurns % 2 == 0 ? ratio.rawValue : sides.reversed().joined(separator: ":")
+        let request = "This image is \(frame.width)x\(frame.height) pixels. The frame is \(shape), width to height."
         let body: [String: Any] = [
             "model": "claude-sonnet-5-5",
             "max_tokens": 6000,
@@ -248,8 +252,8 @@ enum ClaudeScanner {
                 needed = max(Double(composed.width) / cropWidth, Double(composed.height) / cropHeight, subjectShare)
                 middle = CGPoint(x: composed.midX, y: composed.midY)
             }
-            // Rounded to a tenth, as the zoom row shows it.
-            let exact = (scanLens / needed * 10).rounded() / 10
+            // To a tenth, as the zoom row shows it, and downwards so the frame is never tighter than asked.
+            let exact = (scanLens / needed * 10 + 0.0001).rounded(.down) / 10
             let zoom = min(max(exact, scanLens), ClaudeScanner.longestZoom)
             let scale = min(scanLens / zoom, 1)
             let halfWidth = scale * Double(crop.width) / 2

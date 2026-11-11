@@ -5,7 +5,7 @@
 Results go to runs/NAME: one annotated picture per photo, contact sheets and results.json.
 The API key comes from ANTHROPIC_API_KEY (environment or Windows user settings) and is never written anywhere.
 """
-import argparse, base64, concurrent.futures, glob, io, json, os, re, statistics, time, urllib.error, urllib.request
+import argparse, base64, concurrent.futures, glob, io, json, math, os, re, statistics, time, urllib.error, urllib.request
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -59,7 +59,7 @@ def frame_for(shot, width, height):
     else:
         needed = max((right - left) / width, (bottom - top) / height) / SUBJECT_FILL
         mx, my = (left + right) / 2 / width, (top + bottom) / 2 / height
-    zoom = min(max(round(SCAN_LENS / needed * 10) / 10, SCAN_LENS), LONGEST_ZOOM)
+    zoom = min(max(math.floor(SCAN_LENS / needed * 10 + 0.0001) / 10, SCAN_LENS), LONGEST_ZOOM)
     scale = min(SCAN_LENS / zoom, 1)
     cx = min(max(mx, scale / 2), 1 - scale / 2)
     cy = min(max(my, scale / 2), 1 - scale / 2)
@@ -86,7 +86,7 @@ def scan(path, args, prompt, key):
         "model": args.model, "max_tokens": 6000, "output_config": output, "system": prompt,
         "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(buffer.getvalue()).decode()}},
-            {"type": "text", "text": f"This image is {image.width}x{image.height} pixels."},
+            {"type": "text", "text": f"This image is {image.width}x{image.height} pixels. The frame is 3:4, width to height."},
         ]}],
     }
     request = urllib.request.Request("https://api.anthropic.com/v1/messages", json.dumps(body).encode(), {

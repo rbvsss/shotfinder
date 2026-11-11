@@ -95,7 +95,7 @@ final class GeometryTests: XCTestCase {
         motion.setTarget(target(x: 0.5, y: 0.5, size: 1), optics: optics, crop: CGSize(width: 1, height: 1))
         let expected = try XCTUnwrap(motion.expectedSubject())
         XCTAssertEqual(expected.box.midX, 0.5, accuracy: 0.0001)
-        XCTAssertTrue(expected.isSteady)
+        XCTAssertTrue(expected.canStart && expected.canFollow)
     }
 
     func testShotBehindThePhoneHasNoPosition() {

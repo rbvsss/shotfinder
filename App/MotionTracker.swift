@@ -51,8 +51,11 @@ final class MotionTracker {
     private static let turnThreshold = 55.0 * Double.pi / 180
     /// How long after a zoom the picture is still changing size, so the subject can't be followed in it.
     private static let zoomSettleTime: TimeInterval = 0.4
-    /// Turning faster than this, in radians a second, the picture lags too far behind the gyroscope to compare.
-    private static let steadyTurnSpeed = 0.6
+    /// The picture is a moment older than the gyroscope's reading, so a turning phone shows the subject
+    /// where it was. These are the fastest turns, in view widths a second, at which that gap is small
+    /// enough to follow the subject, and to start following it, which bakes any gap in.
+    private static let followSpeed = 0.5
+    private static let startSpeed = 0.15
     /// How far the guide moves towards each sighting of the subject, so it follows without jitter.
     private static let followStrength = 0.4
 
@@ -98,21 +101,28 @@ final class MotionTracker {
 
     /// Where the subject should be in the live picture now, as fractions of the viewfinder.
     /// Nil with no shot, with the shot behind the phone, or while the zoom is changing.
-    func expectedSubject() -> (box: CGRect, isSteady: Bool)? {
-        lock.withLock { () -> (box: CGRect, isSteady: Bool)? in
+    func expectedSubject() -> (box: CGRect, canStart: Bool, canFollow: Bool)? {
+        lock.withLock { () -> (box: CGRect, canStart: Bool, canFollow: Bool)? in
             guard let target = live.target, let optics = live.optics,
                   ProcessInfo.processInfo.systemUptime - live.zoomChangedAt > Self.zoomSettleTime,
                   let box = target.subjectBox(rotation: live.rotation, optics: optics, zoomFactor: live.zoomFactor) else {
                 return nil
             }
-            return (box, live.turnSpeed < Self.steadyTurnSpeed)
+            let speed = Self.viewSpeed(in: live, optics: optics)
+            return (box, speed < Self.startSpeed, speed < Self.followSpeed)
         }
+    }
+
+    /// How fast the scene crosses the view, in view widths a second. Zoomed in, a small turn is a big move.
+    private static func viewSpeed(in live: Live, optics: CameraOptics) -> Double {
+        live.turnSpeed * live.zoomFactor / (2 * optics.tanHorizontal)
     }
 
     /// Moves the guide towards where the camera sees the subject, which also catches the phone being moved.
     func follow(subjectAt point: CGPoint) {
         refreshGuide { live in
-            guard let target = live.target, let optics = live.optics, live.turnSpeed < Self.steadyTurnSpeed else { return }
+            guard let target = live.target, let optics = live.optics,
+                  Self.viewSpeed(in: live, optics: optics) < Self.followSpeed else { return }
             let expected = live.rotation.act(target.subjectRay)
             guard expected.z < -0.01 else { return }
             let seen = ScanTarget.direction(x: Double(point.x), y: Double(point.y), optics: optics, zoomFactor: live.zoomFactor)
