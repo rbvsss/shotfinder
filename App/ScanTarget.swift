@@ -54,16 +54,18 @@ struct GuideProjection {
     /// How much of the crop the shot covers. 1 means it fills the frame exactly.
     let fill: Double
 
+    /// Close enough that the subject sits well inside the frame, so roughly pointing at it counts.
     var isCentered: Bool {
-        hypot(x - 0.5, y - 0.5) < 0.04
+        hypot(x - 0.5, y - 0.5) < 0.08
     }
 
+    /// Any zoom from a little wide to just past the shot. Further in would cut the subject.
     var isZoomed: Bool {
-        fill > 0.85 && fill < 1.15
+        fill > 0.7 && fill < 1.15
     }
 
     var staysAligned: Bool {
-        hypot(x - 0.5, y - 0.5) < 0.055 && fill > 0.8 && fill < 1.2
+        hypot(x - 0.5, y - 0.5) < 0.11 && fill > 0.6 && fill < 1.25
     }
 
     /// Whether the shot would still be near the middle after zooming in by this much.

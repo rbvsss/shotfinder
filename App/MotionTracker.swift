@@ -47,8 +47,8 @@ final class MotionTracker {
     private static let maxStep: TimeInterval = 0.2
     /// How far past a quarter turn the phone must go before icons and photos follow, to stop flicker.
     private static let turnThreshold = 55.0 * Double.pi / 180
-    private static let levelTolerance = 1.5 * Double.pi / 180
-    private static let alignedLevelTolerance = 2.5 * Double.pi / 180
+    private static let levelTolerance = 3 * Double.pi / 180
+    private static let alignedLevelTolerance = 4.5 * Double.pi / 180
 
     func start() {
         guard Self.manager.isDeviceMotionAvailable, !Self.manager.isDeviceMotionActive else { return }

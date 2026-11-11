@@ -47,6 +47,15 @@ final class GeometryTests: XCTestCase {
         XCTAssertFalse(nearMiddle.staysCentered(afterZooming: 1))
     }
 
+    func testRoughlyPointingAtTheShotCountsAsLinedUp() {
+        let nearlyThere = GuideProjection(x: 0.55, y: 0.54, width: 0.8, height: 0.8, fill: 0.8)
+        let tooFarIn = GuideProjection(x: 0.5, y: 0.5, width: 1.3, height: 1.3, fill: 1.3)
+        let offToTheSide = GuideProjection(x: 0.62, y: 0.5, width: 1, height: 1, fill: 1)
+        XCTAssertTrue(nearlyThere.isCentered && nearlyThere.isZoomed)
+        XCTAssertFalse(tooFarIn.isZoomed, "Zooming far past the shot cuts the subject")
+        XCTAssertFalse(offToTheSide.isCentered)
+    }
+
     func testShotBehindThePhoneHasNoPosition() {
         let halfTurn = simd_quatd(angle: .pi, axis: SIMD3(0, 1, 0))
         XCTAssertNil(target(x: 0.5, y: 0.5).projection(rotation: halfTurn, optics: optics, zoomFactor: 1, crop: CGSize(width: 1, height: 1)))

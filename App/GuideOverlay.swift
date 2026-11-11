@@ -29,7 +29,7 @@ struct GuideOverlay: View {
 
     /// The level only appears near level, as on the iPhone camera, and joins up when it gets there.
     private static let levelRange = 15 * Double.pi / 180
-    private static let levelTolerance = 1.5 * Double.pi / 180
+    private static let levelTolerance = 3 * Double.pi / 180
     /// How far off the view the dashed line is drawn, so a shot far away can't make a huge path.
     private static let lineReach = 3.0
     /// The space the dashed line leaves around the crosshair.
