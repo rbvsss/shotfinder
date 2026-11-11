@@ -1,27 +1,75 @@
 {
- "living-room-1.jpg": {
-  "title": "Living Room",
-  "creator": "Dan Gold",
+ "home-office-desk-1.jpg": {
+  "title": "Home office desk. View",
+  "creator": null,
   "license": "cc0",
-  "page": "https://stocksnap.io/photo/living-room-BI0P6D3WL9"
+  "page": "https://www.rawpixel.com/image/8811869/photo-image-technology-work-gaming"
  },
- "living-room-2.jpg": {
-  "title": "Living Room",
-  "creator": "Dan Gold",
+ "home-office-desk-2.jpg": {
+  "title": "Professional Business",
+  "creator": "Olu Eletu",
   "license": "cc0",
-  "page": "https://stocksnap.io/photo/living-room-Q3N84SQ4YQ"
+  "page": "https://stocksnap.io/photo/professional-business-4VTDQ367MU"
  },
- "park-bench-1.jpg": {
-  "title": "Park Bench",
-  "creator": "Gabriel Garcia Marengo",
+ "cafe-interior-1.jpg": {
+  "title": "Spacious cafe interior large window",
+  "creator": null,
   "license": "cc0",
-  "page": "https://stocksnap.io/photo/park-bench-OHB52SYM4B"
+  "page": "https://www.rawpixel.com/image/3289700/free-photo-image-cafe-building-cafeteria"
  },
- "park-bench-2.jpg": {
-  "title": "Park Bench",
-  "creator": "Johannes Plenio",
+ "cafe-interior-2.jpg": {
+  "title": "Cafe Restaurant",
+  "creator": "donterase",
   "license": "cc0",
-  "page": "https://stocksnap.io/photo/park-bench-OG5I0BYUD3"
+  "page": "https://stocksnap.io/photo/cafe-restaurant-HOHJK6B7TD"
+ },
+ "city-street-people-1.jpg": {
+  "title": "Guy Man",
+  "creator": "Matthew Henry",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/guy-man-UYPK53YC65"
+ },
+ "city-street-people-2.jpg": {
+  "title": "Running Fitness",
+  "creator": "Chanan Greenblatt",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/running-fitness-RMDYXIJFJN"
+ },
+ "kitchen-1.jpg": {
+  "title": "Restaurant Kitchen",
+  "creator": "Michael Browning",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/restaurant-kitchen-0HCMIT272C"
+ },
+ "kitchen-2.jpg": {
+  "title": "Kitchen Table",
+  "creator": "Patryk Dziejma",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/kitchen-table-B3M57Q3I7H"
+ },
+ "street-market-1.jpg": {
+  "title": "Free street market photo",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/5924489/photo-image-public-domain-people-free"
+ },
+ "street-market-2.jpg": {
+  "title": "Food street market",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/6038723/photo-image-public-domain-food-free"
+ },
+ "street-at-night-1.jpg": {
+  "title": "Tokyo shopping street, Japan night",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/11189205/tokyo-shopping-street-japan-night"
+ },
+ "street-at-night-2.jpg": {
+  "title": "Side Street By Night",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/5969447/side-street-night"
  },
  "harbour-boats-1.jpg": {
   "title": "Boats Ships",
@@ -107,6 +155,18 @@
   "license": "cc0",
   "page": "https://stocksnap.io/photo/tools-workshop-KD30XPQR0A"
  },
+ "garden-house-1.jpg": {
+  "title": "View Garden House Upper Winchendon",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/9491884/image-art-watercolors-vintage"
+ },
+ "garden-house-2.jpg": {
+  "title": "Mystic view garden house park",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/3371877/free-photo-image-arbour-bench-cc0"
+ },
  "town-square-1.jpg": {
   "title": "Bremen town square Germany",
   "creator": null,
@@ -118,5 +178,53 @@
   "creator": "thegetty",
   "license": "cc0",
   "page": "https://www.rawpixel.com/image/14297072/town-square-montreal-canada-william-notman"
+ },
+ "restaurant-table-1.jpg": {
+  "title": "Restaurant Table",
+  "creator": "Leeroy",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/restaurant-table-A6FE2C3A25"
+ },
+ "restaurant-table-2.jpg": {
+  "title": "Restaurant Table",
+  "creator": "Jonas Nilsson Lee",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/restaurant-table-29AFHWA2UJ"
+ },
+ "bookshop-1.jpg": {
+  "title": "Books Bookshop",
+  "creator": "Suzy Hazelwood",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/books-bookshop-K4BCIJPVOE"
+ },
+ "bookshop-2.jpg": {
+  "title": "Richmond Necessities. bookshop had lot",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/11193297/photo-image-person-public-domain-brick"
+ },
+ "stadium-crowd-1.jpg": {
+  "title": "Football stadium, crowd audience. View",
+  "creator": null,
+  "license": "cc0",
+  "page": "https://www.rawpixel.com/image/8809293/photo-image-light-person-green"
+ },
+ "stadium-crowd-2.jpg": {
+  "title": "People Crowd",
+  "creator": "davide ragusa",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/people-crowd-QM8SLOCJ8M"
+ },
+ "office-people-1.jpg": {
+  "title": "Team Meeting",
+  "creator": "Startup Stock Photos",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/team-meeting-VQXYE2ZEHC"
+ },
+ "office-people-2.jpg": {
+  "title": "Team Meeting",
+  "creator": "Startup Stock Photos",
+  "license": "cc0",
+  "page": "https://stocksnap.io/photo/team-meeting-JBW2PXDOL6"
  }
 }

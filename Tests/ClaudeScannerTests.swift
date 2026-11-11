@@ -160,12 +160,13 @@ final class ClaudeScannerTests: XCTestCase {
     }
 
     func testClaudesOwnFrameSetsTheZoomAndTheLook() async throws {
-        // A frame half the view wide, around a subject well inside it.
+        // A frame half the view wide and high, around a subject well inside it. The square crop is
+        // three quarters of the view high, so it takes two thirds of the view: 0.8x, to a tenth.
         StubProtocol.body = answer(x1: 279, y1: 600, x2: 441, y2: 720, extra: #",\"fx1\":225,\"fy1\":300,\"fx2\":675,\"fy2\":900,\"look\":\"cinder\""#)
 
         let result = try await scan()
 
-        XCTAssertEqual(result.size, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.size, 0.625, accuracy: 0.0001)
         XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
         XCTAssertEqual(result.centerY, 0.5, accuracy: 0.0001)
         XCTAssertEqual(result.look, .cinder)
@@ -177,9 +178,10 @@ final class ClaudeScannerTests: XCTestCase {
 
         let result = try await scan()
 
-        XCTAssertEqual(result.size, 0.5, accuracy: 0.0001)
-        XCTAssertEqual(result.centerX, 0.25, accuracy: 0.0001)
-        XCTAssertEqual(result.centerY, 0.35, accuracy: 0.0001)
+        // Down until the subject's lower edge is in, and right until the frame is inside the image.
+        XCTAssertEqual(result.size, 0.625, accuracy: 0.0001)
+        XCTAssertEqual(result.centerX, 0.3125, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.6 - 0.625 * 0.75 / 2, accuracy: 0.0001)
     }
 
     func testBigSubjectUsesTheWholeView() async throws {

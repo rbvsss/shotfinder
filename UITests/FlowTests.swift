@@ -146,6 +146,8 @@ final class FlowTests: XCTestCase {
         shoot("e2e-13-cinder")
 
         app.buttons["Adjust"].tap()
+        // The last choices start off the edge of the screen.
+        app.buttons["Contrast"].swipeLeft()
         app.buttons["Vignette"].tap()
         app.sliders["Vignette"].adjust(toNormalizedSliderPosition: 0.8)
         shoot("e2e-13b-adjust")

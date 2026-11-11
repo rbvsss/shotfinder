@@ -227,6 +227,13 @@ enum ClaudeScanner {
             return frame.viewBox(CGRect(x: left / width, y: top / height, width: (right - left) / width, height: (bottom - top) / height))
         }
 
+        /// The nearest middle to `middle` for a span of `half` each way that still covers `low` to `high`.
+        /// A subject too big for the span is centred in it.
+        private static func holding(_ low: Double, _ high: Double, from middle: Double, half: Double) -> Double {
+            guard high - low <= 2 * half else { return (low + high) / 2 }
+            return min(max(middle, high - half), low + half)
+        }
+
         /// The zoom and place of Claude's frame, never tighter than the subject and kept inside the image.
         func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
             guard let subject = Self.viewBox(x1, y1, x2, y2, in: frame) else { return nil }
@@ -248,8 +255,8 @@ enum ClaudeScanner {
             let halfWidth = scale * Double(crop.width) / 2
             let halfHeight = scale * Double(crop.height) / 2
             // Slide the frame so the whole subject is inside it, then keep it inside the image.
-            let centerX = min(max(Double(middle.x), Double(subject.maxX) - halfWidth), Double(subject.minX) + halfWidth)
-            let centerY = min(max(Double(middle.y), Double(subject.maxY) - halfHeight), Double(subject.minY) + halfHeight)
+            let centerX = Self.holding(Double(subject.minX), Double(subject.maxX), from: Double(middle.x), half: halfWidth)
+            let centerY = Self.holding(Double(subject.minY), Double(subject.maxY), from: Double(middle.y), half: halfHeight)
             return ScanResult(
                 label: label,
                 tip: tip,
