@@ -26,6 +26,9 @@ struct DevelopView: View {
     @State private var pendingRender: DevelopSettings?
     @State private var isRendering = false
     @State private var tab = Panel.looks
+    /// Settings to go back to, and ones undone that can come back.
+    @State private var past: [DevelopSettings] = []
+    @State private var undone: [DevelopSettings] = []
     @State private var adjustment = Adjustment.exposure
 
     private enum Panel: String, CaseIterable {
@@ -51,7 +54,17 @@ struct DevelopView: View {
                     .padding(.horizontal, 16)
             }
 
-            tabBar
+            HStack(spacing: 10) {
+                historyButton("arrow.uturn.backward", label: "Undo", isOn: !past.isEmpty) {
+                    undone.append(settings)
+                    settings = past.removeLast()
+                }
+                tabBar
+                historyButton("arrow.uturn.forward", label: "Redo", isOn: !undone.isEmpty) {
+                    past.append(settings)
+                    settings = undone.removeLast()
+                }
+            }
 
             Group {
                 switch tab {
@@ -119,6 +132,8 @@ struct DevelopView: View {
             HStack(spacing: 10) {
                 ForEach(Look.allCases) { look in
                     Button {
+                        guard settings.look != look else { return }
+                        remember()
                         settings.look = look
                     } label: {
                         VStack(spacing: 6) {
@@ -152,6 +167,25 @@ struct DevelopView: View {
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    /// Call before a change, so it can be undone.
+    private func remember() {
+        past.append(settings)
+        undone.removeAll()
+    }
+
+    private func historyButton(_ symbol: String, label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(isOn ? Color.white : Color.white.opacity(0.25))
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isOn)
+        .accessibilityLabel(label)
     }
 
     private var tabBar: some View {
@@ -201,11 +235,17 @@ struct DevelopView: View {
             }
 
             HStack(spacing: 12) {
-                Slider(value: $settings.adjust[dynamicMember: adjustment.keyPath], in: adjustment.range)
-                    .accessibilityLabel(adjustment.title)
+                Slider(value: $settings.adjust[dynamicMember: adjustment.keyPath], in: adjustment.range) { began in
+                    // One step back per drag, not one per point of travel.
+                    if began {
+                        remember()
+                    }
+                }
+                .accessibilityLabel(adjustment.title)
 
                 // Tap the number to put it back to zero.
                 Button {
+                    remember()
                     settings.adjust[keyPath: adjustment.keyPath] = 0
                 } label: {
                     Text("\(Int((settings.adjust[keyPath: adjustment.keyPath] * 100).rounded()))")
@@ -224,11 +264,13 @@ struct DevelopView: View {
     private var finishPanel: some View {
         HStack(spacing: 10) {
             optionButton(settings.grain.title, isOn: settings.grain != .off) {
+                remember()
                 settings.grain = settings.grain.next
             }
             .accessibilityLabel("Grain, \(settings.grain.title)")
 
             optionButton(settings.frame.title, isOn: settings.frame != .none) {
+                remember()
                 settings.frame = settings.frame.next
             }
             .accessibilityLabel("Frame, \(settings.frame.title)")

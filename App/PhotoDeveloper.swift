@@ -39,17 +39,22 @@ struct Adjustments: Equatable {
     var saturation = 0.0
     var fade = 0.0
     var vignette = 0.0
+    var glow = 0.0
+    var sharpen = 0.0
 }
 
 enum Adjustment: String, CaseIterable, Identifiable {
-    case exposure, contrast, warmth, saturation, fade, vignette
+    case exposure, contrast, warmth, saturation, fade, vignette, glow, sharpen
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
 
-    /// Fade and vignette only go one way.
+    /// The first four go both ways. The rest are effects that are either off or on by some amount.
     var range: ClosedRange<Double> {
-        self == .fade || self == .vignette ? 0...1 : -1...1
+        switch self {
+        case .exposure, .contrast, .warmth, .saturation: return -1...1
+        case .fade, .vignette, .glow, .sharpen: return 0...1
+        }
     }
 
     var keyPath: WritableKeyPath<Adjustments, Double> {
@@ -60,6 +65,8 @@ enum Adjustment: String, CaseIterable, Identifiable {
         case .saturation: return \.saturation
         case .fade: return \.fade
         case .vignette: return \.vignette
+        case .glow: return \.glow
+        case .sharpen: return \.sharpen
         }
     }
 }
@@ -303,9 +310,27 @@ final class PhotoDeveloper {
 
     private static func develop(_ image: CIImage, _ settings: DevelopSettings) -> CIImage {
         let toned = settings.look.apply(to: BaseTone.apply(to: image, settings.adjust))
-        let shaded = addVignette(to: toned, amount: settings.adjust.vignette)
+        let shaded = addVignette(to: addGlow(to: sharpened(toned, amount: settings.adjust.sharpen), amount: settings.adjust.glow), amount: settings.adjust.vignette)
         let grained = addGrain(to: shaded, amount: settings.grain.amount)
         return settings.frame.apply(to: grained)
+    }
+
+    /// Lets the bright parts bleed softly into what is around them, sized to the photo.
+    private static func addGlow(to image: CIImage, amount: Double) -> CIImage {
+        guard amount > 0 else { return image }
+        let filter = CIFilter.bloom()
+        filter.inputImage = image
+        filter.radius = Float(max(image.extent.width, image.extent.height) * 0.012)
+        filter.intensity = Float(amount * 0.8)
+        return filter.outputImage?.cropped(to: image.extent) ?? image
+    }
+
+    private static func sharpened(_ image: CIImage, amount: Double) -> CIImage {
+        guard amount > 0 else { return image }
+        let filter = CIFilter.sharpenLuminance()
+        filter.inputImage = image
+        filter.sharpness = Float(amount * 0.9)
+        return filter.outputImage?.cropped(to: image.extent) ?? image
     }
 
     /// Darkens towards the corners, sized to the photo so the preview matches the saved file.

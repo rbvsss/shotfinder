@@ -152,6 +152,12 @@ final class FlowTests: XCTestCase {
         app.sliders["Vignette"].adjust(toNormalizedSliderPosition: 0.8)
         shoot("e2e-13b-adjust")
 
+        // Undo takes the vignette off again, and redo puts it back.
+        app.buttons["Undo"].tap()
+        XCTAssertTrue(app.buttons["Redo"].isEnabled)
+        app.buttons["Redo"].tap()
+        XCTAssertFalse(app.buttons["Redo"].isEnabled)
+
         app.buttons["Finish"].tap()
         app.buttons["Grain, No Grain"].tap()
         XCTAssertTrue(app.buttons["Grain, Fine Grain"].waitForExistence(timeout: 3))
