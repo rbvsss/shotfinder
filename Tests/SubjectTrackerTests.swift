@@ -45,7 +45,8 @@ final class SubjectTrackerTests: XCTestCase {
         return buffer
     }
 
-    /// Slides the scene by `right` and `down` over forty frames, then holds, and returns how far the guide moved.
+    /// Holds the scene still while the tracker settles, slides it by `right` and `down` over forty frames,
+    /// then holds again, and returns how far the guide moved.
     private func guideMovement(right: CGFloat, down: CGFloat) throws -> (x: Double, y: Double) {
         let image = try photo()
         var result = ScanResult(label: "church", tip: "", centerX: Double(subject.midX), centerY: Double(subject.midY), size: 0.3)
@@ -56,8 +57,8 @@ final class SubjectTrackerTests: XCTestCase {
         let tracker = SubjectTracker(motion: motion)
         let start = try XCTUnwrap(motion.snapshot().projection)
 
-        for step in 0..<70 {
-            let progress = min(CGFloat(step) / 40, 1)
+        for step in 0..<90 {
+            let progress = min(max(CGFloat(step - 20) / 40, 0), 1)
             tracker.process(try frame(of: image, movedRight: right * progress, movedDown: down * progress))
         }
         let end = try XCTUnwrap(motion.snapshot().projection)
