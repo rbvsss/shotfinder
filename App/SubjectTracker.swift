@@ -8,9 +8,12 @@ final class SubjectTracker {
     private var handler = VNSequenceRequestHandler()
     private var observation: VNDetectedObjectObservation?
     /// From the middle of the tracker's box to the middle of the subject. The tracker hands back its
-    /// starting box untouched, then settles a little off it on the next frame. Measuring from where it
-    /// settled keeps that from shifting the guide. Nil until then.
-    private var offset: CGVector?
+    /// starting box untouched, then settles a little off it over the next few frames. Measuring from
+    /// where it settled keeps that from shifting the guide.
+    private var offset = CGVector.zero
+    /// Frames still to wait before the tracker's box is trusted.
+    private var settling = 0
+    private static let settleFrames = 4
     private var frames = 0
     private var lastFrame: TimeInterval = 0
 
@@ -75,9 +78,14 @@ final class SubjectTracker {
             height: found.boundingBox.height
         )
         // The first frame only teaches the tracker what to follow, and the second shows where it settled.
-        guard !isStarting else { return }
-        guard let offset else {
+        guard !isStarting else {
+            settling = Self.settleFrames
+            return
+        }
+        guard settling == 0 else {
+            // Only a steady phone counts: a turning one would bake its lag into the measure.
             if expected.canStart {
+                settling -= 1
                 offset = CGVector(dx: expected.box.midX - box.midX, dy: expected.box.midY - box.midY)
             }
             return
@@ -97,7 +105,6 @@ final class SubjectTracker {
     private func stop() {
         guard observation != nil else { return }
         observation = nil
-        offset = nil
         // A new handler lets go of the old tracker.
         handler = VNSequenceRequestHandler()
     }
