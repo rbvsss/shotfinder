@@ -7,6 +7,9 @@ final class SubjectTracker {
     private let motion: MotionTracker
     private var handler = VNSequenceRequestHandler()
     private var observation: VNDetectedObjectObservation?
+    /// From the middle of the tracker's box to the middle of the subject. The tracker settles its box a
+    /// little off where it was started, and following its movement keeps that from shifting the guide.
+    private var offset = CGVector.zero
     private var frames = 0
     private var lastFrame: TimeInterval = 0
 
@@ -64,22 +67,26 @@ final class SubjectTracker {
             return
         }
         observation = found
-        // The first frame only teaches the tracker what to follow.
-        guard !isStarting else { return }
-
-        let seen = CGRect(
+        let box = CGRect(
             x: found.boundingBox.minX,
             y: 1 - found.boundingBox.maxY,
             width: found.boundingBox.width,
             height: found.boundingBox.height
         )
-        guard Self.inside.contains(seen),
-              hypot(seen.midX - expected.box.midX, seen.midY - expected.box.midY) < Self.largestJump else {
+        // The first frame only teaches the tracker what to follow.
+        guard !isStarting else {
+            offset = CGVector(dx: expected.box.midX - box.midX, dy: expected.box.midY - box.midY)
+            return
+        }
+
+        let seen = CGPoint(x: box.midX + offset.dx, y: box.midY + offset.dy)
+        guard Self.inside.contains(box),
+              hypot(seen.x - expected.box.midX, seen.y - expected.box.midY) < Self.largestJump else {
             stop()
             return
         }
         if expected.canFollow {
-            motion.follow(subjectAt: CGPoint(x: seen.midX, y: seen.midY))
+            motion.follow(subjectAt: seen)
         }
     }
 
