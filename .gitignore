@@ -6,3 +6,4 @@ Payload/
 .DS_Store
 bench/runs/
 __pycache__/
+bench/private/

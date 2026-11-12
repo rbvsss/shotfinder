@@ -53,9 +53,9 @@ final class ClaudeScannerTests: XCTestCase {
         URLProtocol.unregisterClass(StubProtocol.self)
     }
 
-    private func scan(scanLens: Double = 0.5) async throws -> ScanResult {
+    private func scan(scanLens: Double = 0.5, isClose: Bool = false) async throws -> ScanResult {
         let frame = ScanFrame(jpeg: Data([1, 2, 3]), width: 900, height: 1200, zoomFactor: 1)
-        return try await ClaudeScanner.scan(frame: frame, ratio: .square, scanLens: scanLens, apiKey: "test-key")
+        return try await ClaudeScanner.scan(frame: frame, ratio: .square, scanLens: scanLens, isClose: isClose, apiKey: "test-key")
     }
 
     private func assertFails(status: Int, json: String, matching check: (ScanError) -> Bool) async {
@@ -170,6 +170,16 @@ final class ClaudeScannerTests: XCTestCase {
         XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
         XCTAssertEqual(result.centerY, 0.5, accuracy: 0.0001)
         XCTAssertEqual(result.look, .cinder)
+    }
+
+    func testCloseFramingTightensALooseFrame() async throws {
+        // The same loose frame, but close framing lets the subject fill no less than three quarters:
+        // 0.18 of the view wide needs 0.24 of it, which is 2x after rounding down.
+        StubProtocol.body = answer(x1: 279, y1: 600, x2: 441, y2: 720, extra: #",\"fx1\":225,\"fy1\":300,\"fx2\":675,\"fy2\":900,\"look\":\"cinder\""#)
+
+        let result = try await scan(isClose: true)
+
+        XCTAssertEqual(result.size, 0.25, accuracy: 0.0001)
     }
 
     func testFrameIsMovedToHoldTheWholeSubject() async throws {

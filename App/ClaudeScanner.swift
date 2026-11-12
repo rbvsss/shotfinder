@@ -117,6 +117,8 @@ enum ClaudeScanner {
     private static let longestZoom = 4.0
     /// The most of the frame the subject may fill, which leaves a little air on every side.
     private static let subjectFill = 0.9
+    /// The least it fills with close framing on, however loose a frame Claude draws.
+    private static let closeFill = 0.75
 
     private static let schema: [String: Any] = [
         "type": "object",
@@ -137,7 +139,8 @@ enum ClaudeScanner {
         "additionalProperties": false
     ]
 
-    static func scan(frame: ScanFrame, ratio: CaptureRatio, scanLens: Double, apiKey: String) async throws -> ScanResult {
+    /// `isClose` keeps the frame tight on the subject. Without it Claude's own, wider frame is used as drawn.
+    static func scan(frame: ScanFrame, ratio: CaptureRatio, scanLens: Double, isClose: Bool = false, apiKey: String) async throws -> ScanResult {
         let crop = ratio.cropInViewfinder
         // The photo's shape in the scene: the chosen ratio, on its side when the phone is.
         let sides = ratio.rawValue.split(separator: ":")
@@ -203,7 +206,7 @@ enum ClaudeScanner {
         guard message.stopReason != "max_tokens",
               let text = message.content.first(where: { $0.type == "text" })?.text,
               let shot = try? JSONDecoder().decode(Shot.self, from: Data(text.utf8)),
-              let result = shot.result(in: frame, crop: crop, scanLens: scanLens) else {
+              let result = shot.result(in: frame, crop: crop, scanLens: scanLens, isClose: isClose) else {
             throw ScanError.badResponse
         }
         return result
@@ -243,7 +246,7 @@ enum ClaudeScanner {
         }
 
         /// The zoom and place of Claude's frame, never too tight for the subject and kept inside the image.
-        func result(in frame: ScanFrame, crop: CGSize, scanLens: Double) -> ScanResult? {
+        func result(in frame: ScanFrame, crop: CGSize, scanLens: Double, isClose: Bool) -> ScanResult? {
             guard let subject = Self.viewBox(x1, y1, x2, y2, in: frame) else { return nil }
             let cropWidth = Double(crop.width)
             let cropHeight = Double(crop.height)
@@ -255,6 +258,9 @@ enum ClaudeScanner {
             if let fx1, let fy1, let fx2, let fy2, let composed = Self.viewBox(fx1, fy1, fx2, fy2, in: frame) {
                 needed = max(Double(composed.width) / cropWidth, Double(composed.height) / cropHeight, needed)
                 middle = CGPoint(x: composed.midX, y: composed.midY)
+            }
+            if isClose {
+                needed = min(needed, subjectShare / ClaudeScanner.closeFill)
             }
             // To a tenth, as the zoom row shows it, and downwards so the frame is never tighter than asked.
             let exact = (scanLens / needed * 10 + 0.0001).rounded(.down) / 10

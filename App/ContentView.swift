@@ -20,6 +20,7 @@ struct ContentView: View {
     @AppStorage("camera.ratio") private var ratio = CaptureRatio.threeFour
     @AppStorage("camera.hasScanned") private var hasScanned = false
     @AppStorage("camera.timer") private var timer = 0
+    @AppStorage("scan.wide") private var wideFraming = false
     @State private var isScanning = false
     @State private var scanIsSlow = false
     @State private var scanTask: Task<Void, Never>?
@@ -301,7 +302,7 @@ struct ContentView: View {
             }
             .accessibilityLabel("Camera options")
             .popover(isPresented: $showingCameraMenu) {
-                CameraMenu(camera: camera, timer: $timer)
+                CameraMenu(camera: camera, timer: $timer, wideFraming: $wideFraming)
             }
 
             topButton(symbol: "ellipsis", isOn: false, label: "Settings") {
@@ -314,7 +315,7 @@ struct ContentView: View {
     }
 
     private var cameraOptionsAreOn: Bool {
-        camera.isNightOn || timer != 0 || camera.exposureCompensation != 0
+        camera.isNightOn || timer != 0 || camera.exposureCompensation != 0 || wideFraming
     }
 
     private func topButton(symbol: String, isOn: Bool, width: CGFloat = 44, label: String, action: @escaping () -> Void) -> some View {
@@ -638,6 +639,7 @@ struct ContentView: View {
             zoomBeforeScan = camera.zoomDisplay
         }
         let scanRatio = ratio
+        let isClose = !wideFraming
         // However the phone is held, the scan sees the scene the right way up.
         let turns = motion.quarterTurns
         camera.zoom(to: camera.lenses.first ?? 1, animated: false)
@@ -647,7 +649,7 @@ struct ContentView: View {
                 try await Task.sleep(nanoseconds: Self.lensSettleDelay)
                 let frame = try await camera.captureScanFrame(quarterTurns: turns) { [motion] in motion.mark() }
                 let scanLens = camera.displayZoom(forFactor: frame.zoomFactor)
-                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, scanLens: scanLens, apiKey: apiKey)
+                let result = try await ClaudeScanner.scan(frame: frame, ratio: scanRatio, scanLens: scanLens, isClose: isClose, apiKey: apiKey)
                 try Task.checkCancellation()
                 guard let optics = camera.optics else { throw ScanError.badResponse }
                 let target = ScanTarget(

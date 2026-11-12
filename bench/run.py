@@ -12,8 +12,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SWIFT = os.path.join(HERE, "..", "App", "ClaudeScanner.swift")
 LONG_EDGE = 1536
 SUBJECT_FILL = 0.9
+# Close framing, the app's default: the subject fills no less than this, however loose a frame the model draws.
+CLOSE_FILL = 0.75
+CLOSE = os.environ.get("WIDE") != "1"
 LONGEST_ZOOM = 4.0
 SCAN_LENS = 0.5
+# The photo's shape in the scene. Sideways scenes set this to 4:3.
+SHAPE = "3:4"
 SCHEMA = {
     "type": "object",
     "properties": {k: {"type": "string"} for k in ("label", "tip")} | {k: {"type": "number"} for k in ("x1", "y1", "x2", "y2")},
@@ -50,7 +55,10 @@ def frame_for(shot, width, height):
         fl, fr = sorted((min(max(shot["fx1"], 0), width), min(max(shot["fx2"], 0), width)))
         ft, fb = sorted((min(max(shot["fy1"], 0), height), min(max(shot["fy2"], 0), height)))
         # Never tighter than the subject itself, whatever the model drew.
-        needed = max((fr - fl) / width, (fb - ft) / height, (right - left) / width / SUBJECT_FILL, (bottom - top) / height / SUBJECT_FILL)
+        share = max((right - left) / width, (bottom - top) / height)
+        needed = max((fr - fl) / width, (fb - ft) / height, share / SUBJECT_FILL)
+        if CLOSE:
+            needed = min(needed, share / CLOSE_FILL)
         mx, my = (fl + fr) / 2 / width, (ft + fb) / 2 / height
         # Slide the frame so the whole subject is inside it.
         # The subject keeps a little air on every side: a twentieth of the frame.
@@ -88,7 +96,7 @@ def scan(path, args, prompt, key):
         "model": args.model, "max_tokens": 6000, "output_config": output, "system": prompt,
         "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(buffer.getvalue()).decode()}},
-            {"type": "text", "text": f"This image is {image.width}x{image.height} pixels. The frame is 3:4, width to height."},
+            {"type": "text", "text": f"This image is {image.width}x{image.height} pixels. The frame is {SHAPE}, width to height."},
         ]}],
     }
     request = urllib.request.Request("https://api.anthropic.com/v1/messages", json.dumps(body).encode(), {

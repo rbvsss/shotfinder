@@ -58,15 +58,21 @@ struct RatioMenu: View {
     }
 }
 
-/// Night, the timer and exposure, behind the aperture button.
+/// Night, how wide a scan frames its shot, the timer and exposure, behind the aperture button.
 struct CameraMenu: View {
     let camera: CameraController
     @Binding var timer: Int
+    @Binding var wideFraming: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Toggle(isOn: Binding(get: { camera.isNightOn }, set: { camera.setNight($0) })) {
                 Label("Night", systemImage: "moon")
+            }
+
+            // Off, a scan goes in close on its subject. On, it keeps more of the scene around it.
+            Toggle(isOn: $wideFraming) {
+                Label("Wide Framing", systemImage: "arrow.up.left.and.arrow.down.right")
             }
 
             VStack(alignment: .leading, spacing: 8) {
